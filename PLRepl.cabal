@@ -1,0 +1,32 @@
+name:                PLRepl
+version:             0.1.0.0
+synopsis:            A Repl for PL
+description:         A REPL for PL built with Brick and Haskeline.
+author:              Samuel A. Yallop
+maintainer:          syallop@gmail.com
+copyright:           Samuel A. Yallop
+build-type:          Simple
+extra-source-files:  ChangeLog.md
+cabal-version:       >=1.10
+
+executable pl
+  main-is:             PLRepl.hs
+
+  build-depends:       base >=4.7
+                     , transformers
+                     , mtl
+                     , text
+                     , haskeline
+                     , directory
+                     , brick
+                     , vty
+                     , PL
+                     , PLPrinter
+
+  other-modules:       PLRepl.Event
+                     , PLRepl.Name
+                     , PLRepl.State
+
+  default-language:    Haskell2010
+
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N

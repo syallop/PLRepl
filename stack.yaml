@@ -1,0 +1,19 @@
+resolver: lts-9.18
+packages:
+- '.'
+- '../PL'
+- '../PLGrammar'
+- '../PLParser'
+- '../PLPrinter'
+- location:
+    git: https://github.com/rootmos/haskeline.git
+    commit: bcd94f5cc0c4e919cbda3bb43dde482cac56dd51
+  extra-dep: true
+extra-deps: []
+
+flags:
+  haskeline:
+    brick: true
+
+extra-package-dbs: []
+
