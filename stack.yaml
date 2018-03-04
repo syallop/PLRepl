@@ -7,7 +7,10 @@ packages:
 - '../PLPrinter'
 - location:
     git: https://github.com/rootmos/haskeline.git
-    commit: bcd94f5cc0c4e919cbda3bb43dde482cac56dd51
+    # Next commit adds linewrapping that doesnt take into account we've already
+    # line-wrapped and so newlines should 'reset' the line length count.
+    commit: bf8164bc747e299524548417f3e947cbd3d47f68
+    #commit: bcd94f5cc0c4e919cbda3bb43dde482cac56dd51
   extra-dep: true
 extra-deps: []
 

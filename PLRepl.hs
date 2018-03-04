@@ -91,10 +91,12 @@ drawUI
   :: PL.State
   -> [Widget PL.Name]
 drawUI st =
-  [HL.render (_haskeline st) <+> sidebar
+  [ hl <+> sidebar
   ]
   where
-    sidebar = border $ hLimit 20 $ viewport Sidebar Vertical $ vBox $ map (str . show) ["Sidebar"]
+    hl      = border $ hLimit 160 $ HL.render (_haskeline st)
+    sidebar = border $ hLimit 60 $ viewport Sidebar Vertical $ vBox $ map (str . show) ["Sidebar"]
+
 
 main :: IO ()
 main = run
@@ -193,3 +195,4 @@ instance MonadException m => MonadException (StateT s m) where
         stateRunIO :: s -> RunIO m -> RunIO (StateT s m)
         stateRunIO s (RunIO run) = RunIO (\m -> fmap (StateT . const)
                                         $ run (runStateT m s))
+
