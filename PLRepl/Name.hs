@@ -14,4 +14,6 @@ data Name
 
   -- The entire sidebar.
   | Sidebar
+
+  | HaskelineViewport
   deriving (Eq, Ord, Show)

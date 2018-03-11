@@ -91,10 +91,10 @@ drawUI
   :: PL.State
   -> [Widget PL.Name]
 drawUI st =
-  [ hl <+> sidebar
+  [ center $ border $ hLimit 200 $ vLimit 50 $ hl <+> sidebar
   ]
   where
-    hl      = border $ hLimit 160 $ HL.render (_haskeline st)
+    hl      = border $ viewport HaskelineViewport Vertical $ hLimit 160 $ vLimit 48 $ HL.render (_haskeline st)
     sidebar = border $ hLimit 60 $ viewport Sidebar Vertical $ vBox $ map (str . show) ["Sidebar"]
 
 
