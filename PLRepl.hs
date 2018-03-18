@@ -42,17 +42,17 @@ type ReplApp = App PL.State PL.Event PL.Name
 
 -- | replApp is a Brick app providing a repl for PL.
 replApp
-  :: HL.Config PL.Event
+  :: BChan PL.Event
   -> ReplApp
-replApp config = App
+replApp chan = App
   { -- No actions needed on startup.
     appStartEvent = pure
 
     -- Update the repl state in response to events.
-  , appHandleEvent = handleEvent config
+  , appHandleEvent = handleEvent chan
 
-    -- Always pick the Haskeline widget for the cursor.
-  , appChooseCursor = \_ -> showCursorNamed Haskeline
+    -- Always pick the Editor widget for the cursor.
+  , appChooseCursor = \_ -> showCursorNamed EditorWidget
 
     -- Named attributes describing reusable layout and drawing properties.
   , appAttrMap = const attributes
@@ -63,24 +63,43 @@ replApp config = App
 
 -- | Update the repl state in response to events.
 handleEvent
-  :: HL.Config PL.Event
+  :: BChan PL.Event
   -> PL.State
   -> BrickEvent PL.Name PL.Event
   -> EventM PL.Name (Next PL.State)
-handleEvent config (PL.State replCtx hl) ev = do
-  hl' <- HL.handleEvent config hl ev
-  case ev of
-    AppEvent aEv
-      -> case aEv of
-           PL.ReplaceReplCtx replCtx'
-             -> continue (PL.State replCtx' hl')
+handleEvent chan (st@(PL.State replCtx editorSt)) ev = case ev of
+  -- an event from our application
+  AppEvent appEv -> case appEv of
+    -- Replctx must be updated
+    PL.ReplaceReplCtx replCtx'
+      -> continue (PL.State replCtx' editorSt)
 
-           PL.HaskelineDied _eException
-             -> halt(PL.State replCtx hl')
+    -- An event to the editor
+    PL.EditorEv editorEv
+      -> do editorSt' <- handleEditorEvent editorEv editorSt
+            continue (PL.State replCtx editorSt')
 
-           _ -> continue (PL.State replCtx hl')
+  -- A virtual terminal event
+  VtyEvent vtyEv -> case vtyEv of
+    -- A key with no modifiers
+    Vty.EvKey keyEv [] -> case keyEv of
+      Vty.KUp     -> liftIO (writeBChan chan . EditorEv $ CursorUp) >> continue st
+      Vty.KDown   -> liftIO (writeBChan chan . EditorEv $ CursorDown)     >> continue st
+      Vty.KLeft   -> liftIO (writeBChan chan . EditorEv $ CursorLeft)     >> continue st
+      Vty.KRight  -> liftIO (writeBChan chan . EditorEv $ CursorRight)    >> continue st
+      Vty.KChar c -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
+      Vty.KDel    -> liftIO (writeBChan chan . EditorEv $ DeleteChar)     >> continue st
+      _ -> continue st
 
-    _ -> continue (PL.State replCtx hl')
+    -- A key with a Control modifier.
+    Vty.EvKey keyEv [Vty.MCtrl] -> case keyEv of
+      Vty.KUp    -> liftIO (writeBChan chan . EditorEv . TallerView $ 1)  >> continue st
+      Vty.KDown  -> liftIO (writeBChan chan . EditorEv . TallerView $ -1) >> continue st
+      Vty.KLeft  -> liftIO (writeBChan chan . EditorEv . WiderView $ -1)  >> continue st
+      Vty.KRight -> liftIO (writeBChan chan . EditorEv . WiderView $ 1)   >> continue st
+      _ -> continue st
+
+  _ -> continue st
 
 -- | Named attributes describing reusable layout and drawing properties.
 attributes :: AttrMap
@@ -91,10 +110,10 @@ drawUI
   :: PL.State
   -> [Widget PL.Name]
 drawUI st =
-  [ center $ border $ hLimit 200 $ vLimit 50 $ hl <+> sidebar
+  [ center $ border $ hLimit 200 $ vLimit 50 $ editor <+> sidebar
   ]
   where
-    hl      = border $ viewport HaskelineViewport Vertical $ hLimit 160 $ vLimit 48 $ HL.render (_haskeline st)
+    editor  = border $ viewport EditorViewport Vertical $ hLimit 160 $ vLimit 48 $ drawEditor (_editorState st)
     sidebar = border $ hLimit 60 $ viewport Sidebar Vertical $ vBox $ map (str . show) ["Sidebar"]
 
 
@@ -105,94 +124,5 @@ run :: IO ()
 run = do
   -- Buffer events
   evChan <- newBChan 10
-
-  -- Haskeline configuration
-  hlConfig <- HL.configure evChan PL.HaskelineEv $ \ev ->
-    case ev of
-      PL.HaskelineEv hlEv
-        -> Just hlEv
-      _ -> Nothing
-
-  -- Run haskeline, emiting the died event to Brick on death.
-  void $ forkFinally (runInput hlConfig evChan)
-                     (writeBChan evChan . HaskelineDied)
-
-  -- Run Brick
-  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp hlConfig) initialState
-
--- | Repeatedly Read Eval Print Loop in haskeline, emiting events to brick.
-runInput
-  :: HL.Config PL.Event
-  -> BChan PL.Event
-  -> IO ()
-runInput hlConfig evChan = do
-  hlSettings <- getHaskelineSettings
-
-  -- The Loop threads a ReplCtx as state through the InputT transformer emiting
-  -- updates to Brick when it is replaced.
-  flip evalStateT emptyReplCtx . runInputTBehavior (HL.useBrick hlConfig) hlSettings $ loop
-  where
-    myReplStep :: Text -> Repl Var (Type TyVar) TyVar Text
-    myReplStep =
-      let ?eb  = var
-          ?abs = typ tyVar
-          ?tb  = tyVar
-       in replStep var (typ tyVar) tyVar
-
-    loop :: InputT (StateT (ReplCtx Var TyVar) IO) ()
-    loop = do
-      mInput <- promptInput
-      case mInput of
-        -- End of input. Haskeline is done.
-        Nothing
-          -> return ()
-
-        -- Some unparsed input.
-        Just txt
-          -> do -- Acquire the current replctx
-                replCtx0 <- lift get
-
-                -- Execute a repl step on the input under the context, returning
-                -- the updated context and possible result.
-                let (replCtx1,eRes) = (_unRepl $ myReplStep (Text.pack txt)) replCtx0
-                case eRes of
-                  -- Some PL Eval Parse error. Output, ignore context change then loop.
-                  Left err
-                    -> (outputStrLn . Text.unpack . renderDocument $ err) >> loop
-
-                  -- Successful PL Eval Parse. Output, put updated context then
-                  -- loop.
-                  Right outputTxt
-                    -> do outputStrLn . Text.unpack $ outputTxt
-                          lift $ put replCtx1
-                          liftIO $ writeBChan evChan $ ReplaceReplCtx replCtx1
-                          loop
-
-    promptInput = getInputLine "> "
-
--- | Haskeline settings such as history and auto-completion.
-getHaskelineSettings
-  :: ( MonadState (ReplCtx Var TyVar) m
-     , MonadIO m
-     )
-  => IO (Settings m)
-getHaskelineSettings = do
-  hf <- getAppUserDataDirectory "pl.history"
-  pure Settings
-    { historyFile    = Just hf
-    , complete       = completer
-    , autoAddHistory = True
-    }
-  where
-    completer = completeWord Nothing [' ', '\t'] $ \w -> do
-      s <- get
-      return . map simpleCompletion . filter (isPrefixOf w) $ []
-
-instance MonadException m => MonadException (StateT s m) where
-    controlIO f = StateT $ \s -> controlIO $ \run ->
-                    fmap (flip runStateT s) $ f $ stateRunIO s run
-      where
-        stateRunIO :: s -> RunIO m -> RunIO (StateT s m)
-        stateRunIO s (RunIO run) = RunIO (\m -> fmap (StateT . const)
-                                        $ run (runStateT m s))
+  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) initialState
 

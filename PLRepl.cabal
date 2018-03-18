@@ -6,7 +6,6 @@ author:              Samuel A. Yallop
 maintainer:          syallop@gmail.com
 copyright:           Samuel A. Yallop
 build-type:          Simple
-extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 executable pl
@@ -22,6 +21,7 @@ executable pl
                      , vty
                      , PL
                      , PLPrinter
+                     , PLEditor
 
   other-modules:       PLRepl.Event
                      , PLRepl.Name

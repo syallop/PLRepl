@@ -5,6 +5,7 @@ packages:
 - '../PLGrammar'
 - '../PLParser'
 - '../PLPrinter'
+- '../PLEditor'
 - location:
     git: https://github.com/rootmos/haskeline.git
     # Next commit adds linewrapping that doesnt take into account we've already
