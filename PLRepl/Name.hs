@@ -14,6 +14,9 @@ data Name
 
   | EditorViewport
 
+  | OutputWidget
+  | OutputViewport
+
   -- The entire sidebar.
   | Sidebar
   deriving (Eq, Ord, Show)

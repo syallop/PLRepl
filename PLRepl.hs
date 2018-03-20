@@ -67,36 +67,78 @@ handleEvent
   -> PL.State
   -> BrickEvent PL.Name PL.Event
   -> EventM PL.Name (Next PL.State)
-handleEvent chan (st@(PL.State replCtx editorSt)) ev = case ev of
+handleEvent chan (st@(PL.State replCtx editorSt outputSt)) ev = case ev of
   -- an event from our application
   AppEvent appEv -> case appEv of
     -- Replctx must be updated
     PL.ReplaceReplCtx replCtx'
-      -> continue (PL.State replCtx' editorSt)
+      -> continue (PL.State replCtx' editorSt outputSt)
 
     -- An event to the editor
     PL.EditorEv editorEv
       -> do editorSt' <- handleEditorEvent editorEv editorSt
-            continue (PL.State replCtx editorSt')
+            continue (PL.State replCtx editorSt' outputSt)
+
+    PL.OutputEv outputEv
+      -> do outputSt' <- handleOutputEvent outputEv outputSt
+            continue (PL.State replCtx editorSt outputSt')
 
   -- A virtual terminal event
   VtyEvent vtyEv -> case vtyEv of
     -- A key with no modifiers
-    Vty.EvKey keyEv [] -> case keyEv of
-      Vty.KUp     -> liftIO (writeBChan chan . EditorEv $ CursorUp) >> continue st
-      Vty.KDown   -> liftIO (writeBChan chan . EditorEv $ CursorDown)     >> continue st
-      Vty.KLeft   -> liftIO (writeBChan chan . EditorEv $ CursorLeft)     >> continue st
-      Vty.KRight  -> liftIO (writeBChan chan . EditorEv $ CursorRight)    >> continue st
-      Vty.KChar c -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
-      Vty.KDel    -> liftIO (writeBChan chan . EditorEv $ DeleteChar)     >> continue st
+    Vty.EvKey keyEv modifiers -> case keyEv of
+      Vty.KUp -> case modifiers of
+        []
+          -> liftIO (writeBChan chan . EditorEv $ CursorUp) >> continue st
+        [Vty.MCtrl]
+          -> liftIO (writeBChan chan . EditorEv . TallerView $ 1)  >> continue st
+
+      Vty.KDown -> case modifiers of
+        []
+          -> liftIO (writeBChan chan . EditorEv $ CursorDown)     >> continue st
+        [Vty.MCtrl]
+          -> liftIO (writeBChan chan . EditorEv . TallerView $ -1) >> continue st
+
+      Vty.KLeft -> case modifiers of
+        []
+          -> liftIO (writeBChan chan . EditorEv $ CursorLeft)     >> continue st
+        [Vty.MCtrl]
+          -> liftIO (writeBChan chan . EditorEv . WiderView $ -1)  >> continue st
+
+      Vty.KRight -> case modifiers of
+        []
+          -> liftIO (writeBChan chan . EditorEv $ CursorRight)    >> continue st
+        [Vty.MCtrl]
+          -> liftIO (writeBChan chan . EditorEv . WiderView $ 1)   >> continue st
+
+      Vty.KChar c
+        -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
+
+      Vty.KDel
+        -> liftIO (writeBChan chan . EditorEv $ DeleteChar)     >> continue st
+
+      Vty.KEnter -> case modifiers of
+        []
+          -> liftIO (writeBChan chan . EditorEv $ NewLine)        >> continue st
+
+      Vty.KIns
+        -> do let txt             = editorText editorSt
+              let ?eb             = var
+                  ?abs            = typ tyVar
+                  ?tb             = tyVar
+              let (replCtx',eRes) = (\r -> _unRepl r replCtx) . replStep var (typ tyVar) tyVar . editorText $ editorSt
+              case eRes of
+                -- Some repl error
+                Left err
+                  -> continue (PL.State replCtx editorSt (newOutputState $ [renderDocument err]))
+
+                -- A successful parse
+                Right a
+                  -> do liftIO (writeBChan chan . ReplaceReplCtx $ replCtx')
+                        continue (PL.State replCtx' emptyEditorState $ newOutputState $ [renderDocument a])
+
       _ -> continue st
 
-    -- A key with a Control modifier.
-    Vty.EvKey keyEv [Vty.MCtrl] -> case keyEv of
-      Vty.KUp    -> liftIO (writeBChan chan . EditorEv . TallerView $ 1)  >> continue st
-      Vty.KDown  -> liftIO (writeBChan chan . EditorEv . TallerView $ -1) >> continue st
-      Vty.KLeft  -> liftIO (writeBChan chan . EditorEv . WiderView $ -1)  >> continue st
-      Vty.KRight -> liftIO (writeBChan chan . EditorEv . WiderView $ 1)   >> continue st
       _ -> continue st
 
   _ -> continue st
@@ -110,10 +152,11 @@ drawUI
   :: PL.State
   -> [Widget PL.Name]
 drawUI st =
-  [ center $ border $ hLimit 200 $ vLimit 50 $ editor <+> sidebar
+  [ center $ border $ hLimit 200 $ vLimit 50 $ (editor <=> output) <+> sidebar
   ]
   where
     editor  = border $ viewport EditorViewport Vertical $ hLimit 160 $ vLimit 48 $ drawEditor (_editorState st)
+    output  = border $ viewport OutputViewport Horizontal $ hLimit 160 $ vLimit 40 $ drawOutput (_outputState st)
     sidebar = border $ hLimit 60 $ viewport Sidebar Vertical $ vBox $ map (str . show) ["Sidebar"]
 
 
