@@ -34,6 +34,7 @@ import Control.Monad.State.Lazy
 import Data.List (isPrefixOf)
 import Data.Text (Text)
 import System.Directory
+import System.Exit
 import qualified Data.Text as Text
 
 -- | The ReplApp is a Brick App which handles `Events` to update `State`
@@ -67,21 +68,24 @@ handleEvent
   -> PL.State
   -> BrickEvent PL.Name PL.Event
   -> EventM PL.Name (Next PL.State)
-handleEvent chan (st@(PL.State replCtx editorSt outputSt)) ev = case ev of
+handleEvent chan (st@(PL.State replCtx editorSt outputSt focus)) ev = case ev of
   -- an event from our application
   AppEvent appEv -> case appEv of
     -- Replctx must be updated
     PL.ReplaceReplCtx replCtx'
-      -> continue (PL.State replCtx' editorSt outputSt)
+      -> continue (PL.State replCtx' editorSt outputSt focus)
 
     -- An event to the editor
     PL.EditorEv editorEv
       -> do editorSt' <- handleEditorEvent editorEv editorSt
-            continue (PL.State replCtx editorSt' outputSt)
+            continue (PL.State replCtx editorSt' outputSt focus)
 
     PL.OutputEv outputEv
       -> do outputSt' <- handleOutputEvent outputEv outputSt
-            continue (PL.State replCtx editorSt outputSt')
+            continue (PL.State replCtx editorSt outputSt' focus)
+
+    PL.ToggleFocus
+      -> continue (PL.State replCtx editorSt outputSt (not focus))
 
   -- A virtual terminal event
   VtyEvent vtyEv -> case vtyEv of
@@ -89,27 +93,31 @@ handleEvent chan (st@(PL.State replCtx editorSt outputSt)) ev = case ev of
     Vty.EvKey keyEv modifiers -> case keyEv of
       Vty.KUp -> case modifiers of
         []
-          -> liftIO (writeBChan chan . EditorEv $ CursorUp) >> continue st
+          -> liftIO (writeBChan chan . eventDestination focus $ CursorUp) >> continue st
         [Vty.MCtrl]
-          -> liftIO (writeBChan chan . EditorEv . TallerView $ 1)  >> continue st
+          -> liftIO (writeBChan chan . eventDestination focus . TallerView $ 1)  >> continue st
+        _ -> continue st
 
       Vty.KDown -> case modifiers of
         []
-          -> liftIO (writeBChan chan . EditorEv $ CursorDown)     >> continue st
+          -> liftIO (writeBChan chan . eventDestination focus $ CursorDown)     >> continue st
         [Vty.MCtrl]
-          -> liftIO (writeBChan chan . EditorEv . TallerView $ -1) >> continue st
+          -> liftIO (writeBChan chan . eventDestination focus . TallerView $ -1) >> continue st
+        _ -> continue st
 
       Vty.KLeft -> case modifiers of
         []
-          -> liftIO (writeBChan chan . EditorEv $ CursorLeft)     >> continue st
+          -> liftIO (writeBChan chan . eventDestination focus $ CursorLeft)     >> continue st
         [Vty.MCtrl]
-          -> liftIO (writeBChan chan . EditorEv . WiderView $ -1)  >> continue st
+          -> liftIO (writeBChan chan . eventDestination focus . WiderView $ -1)  >> continue st
+        _ -> continue st
 
       Vty.KRight -> case modifiers of
         []
-          -> liftIO (writeBChan chan . EditorEv $ CursorRight)    >> continue st
+          -> liftIO (writeBChan chan . eventDestination focus $ CursorRight)    >> continue st
         [Vty.MCtrl]
-          -> liftIO (writeBChan chan . EditorEv . WiderView $ 1)   >> continue st
+          -> liftIO (writeBChan chan . eventDestination focus . WiderView $ 1)   >> continue st
+        _ -> continue st
 
       Vty.KChar c
         -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
@@ -120,6 +128,7 @@ handleEvent chan (st@(PL.State replCtx editorSt outputSt)) ev = case ev of
       Vty.KEnter -> case modifiers of
         []
           -> liftIO (writeBChan chan . EditorEv $ NewLine)        >> continue st
+        _ -> continue st
 
       Vty.KIns
         -> do let txt             = editorText editorSt
@@ -130,18 +139,33 @@ handleEvent chan (st@(PL.State replCtx editorSt outputSt)) ev = case ev of
               case eRes of
                 -- Some repl error
                 Left err
-                  -> continue (PL.State replCtx editorSt (newOutputState $ [renderDocument err]))
+                  -- TODO:
+                  -- - Printer should be able to render a document to a list
+                  --   of lines with and without a DocFmt to prevent
+                  --   re-detecting the newlines.
+                  -- - The printer should be passed the current width so it
+                  --   wraps optimally.
+                  -> continue (PL.State replCtx editorSt (newOutputState $ Text.lines $ renderDocument err) False)
 
                 -- A successful parse
                 Right a
                   -> do liftIO (writeBChan chan . ReplaceReplCtx $ replCtx')
-                        continue (PL.State replCtx' emptyEditorState $ newOutputState $ [renderDocument a])
+                        continue (PL.State replCtx' emptyEditorState (newOutputState $ Text.lines $ renderDocument a) True)
+
+      Vty.KPageUp
+        -> liftIO (writeBChan chan ToggleFocus) >> continue st
+
+      Vty.KEsc
+        -> liftIO $ exitSuccess
 
       _ -> continue st
 
-      _ -> continue st
+    _ -> continue st
 
   _ -> continue st
+
+eventDestination :: Bool -> EditorEvent -> PL.Event
+eventDestination focusEditor = if focusEditor then EditorEv else OutputEv
 
 -- | Named attributes describing reusable layout and drawing properties.
 attributes :: AttrMap
@@ -155,8 +179,8 @@ drawUI st =
   [ center $ border $ hLimit 200 $ vLimit 50 $ (editor <=> output) <+> sidebar
   ]
   where
-    editor  = border $ viewport EditorViewport Vertical $ hLimit 160 $ vLimit 48 $ drawEditor (_editorState st)
-    output  = border $ viewport OutputViewport Horizontal $ hLimit 160 $ vLimit 40 $ drawOutput (_outputState st)
+    editor  = border $ viewport EditorViewport Vertical $ hLimit 60 $ vLimit 48 $ drawEditor (_editorState st)
+    output  = border $ viewport OutputViewport Horizontal $ hLimit 160 $ vLimit 100 $ drawOutput (_outputState st)
     sidebar = border $ hLimit 60 $ viewport Sidebar Vertical $ vBox $ map (str . show) ["Sidebar"]
 
 

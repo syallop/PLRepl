@@ -29,6 +29,7 @@ data State = State
   { _replCtx     :: ReplCtx Var TyVar
   , _editorState :: EditorState
   , _outputState :: OutputState
+  , _focusEditor :: Bool
   }
 
 -- | The editor state is the Editor and a View into its lines.
@@ -45,18 +46,19 @@ initialState = State
   { _replCtx     = emptyReplCtx
   , _editorState = emptyEditorState
   , _outputState = emptyOutputState
+  , _focusEditor = True
   }
 
 emptyEditorState :: EditorState
-emptyEditorState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 10 $ E.widerView 80 $ E.emptyView)
+emptyEditorState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 20 $ E.widerView 80 $ E.emptyView)
 
 emptyOutputState :: OutputState
-emptyOutputState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 10 $ E.widerView 80 $ E.emptyView)
+emptyOutputState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 20 $ E.widerView 80 $ E.emptyView)
 
 newOutputState
   :: [Text.Text]
   -> OutputState
-newOutputState lines = EditorState (E.makeEditor $ foldr E.prependLine E.emptyLines $ map E.textLine lines) (E.tallerView 10 $ E.widerView 80 $ E.emptyView)
+newOutputState lines = EditorState (E.makeEditor $ foldr E.prependLine E.emptyLines $ map E.textLine lines) (E.tallerView 30 $ E.widerView 80 $ E.emptyView)
 
 drawEditor
   :: EditorState

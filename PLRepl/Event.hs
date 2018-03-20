@@ -24,6 +24,8 @@ data Event
 
   | OutputEv OutputEvent
 
+  | ToggleFocus
+
   -- The ReplCtx has been replaced with this value.
   | ReplaceReplCtx (ReplCtx Var TyVar)
 
