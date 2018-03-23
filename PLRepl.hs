@@ -18,7 +18,6 @@ import PL.Var
 import PLPrinter
 
 import Brick
-import qualified Brick as Brick
 import Brick.BChan
 import Brick.Widgets.Border
 import Brick.Widgets.Border.Style
@@ -26,6 +25,7 @@ import Brick.Widgets.Center
 import Graphics.Vty as Vty
 import System.Console.Haskeline
 import System.Console.Haskeline.Completion
+import qualified Brick as Brick
 import qualified System.Console.Haskeline.Brick as HL
 
 import Control.Concurrent (threadDelay, forkIO, forkFinally)

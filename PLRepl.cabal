@@ -26,6 +26,12 @@ executable pl
   other-modules:       PLRepl.Event
                      , PLRepl.Name
                      , PLRepl.State
+                     , PLRepl.Editor
+                     , PLRepl.Editor.Event
+                     , PLRepl.Editor.State
+                     , PLRepl.Output
+                     , PLRepl.Output.Event
+                     , PLRepl.Output.State
 
   default-language:    Haskell2010
 
