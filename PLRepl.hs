@@ -18,6 +18,7 @@ import PL.Var
 import PLPrinter
 
 import Brick
+import qualified Brick as Brick
 import Brick.BChan
 import Brick.Widgets.Border
 import Brick.Widgets.Border.Style
@@ -53,7 +54,7 @@ replApp chan = App
   , appHandleEvent = handleEvent chan
 
     -- Always pick the Editor widget for the cursor.
-  , appChooseCursor = \_ -> showCursorNamed EditorWidget
+  , appChooseCursor = \st -> showCursorNamed (if _focusEditor st then EditorCursor else OutputCursor)
 
     -- Named attributes describing reusable layout and drawing properties.
   , appAttrMap = const attributes
@@ -179,8 +180,9 @@ drawUI st =
   [ center $ border $ hLimit 200 $ vLimit 50 $ (editor <=> output) <+> sidebar
   ]
   where
-    editor  = border $ viewport EditorViewport Vertical $ hLimit 60 $ vLimit 48 $ drawEditor (_editorState st)
-    output  = border $ viewport OutputViewport Horizontal $ hLimit 160 $ vLimit 100 $ drawOutput (_outputState st)
+    editor, output, sidebar :: Widget PL.Name
+    editor  = border $ viewport EditorViewport Vertical $ hLimit 60 $ vLimit 48 $ drawEditor EditorCursor (_editorState st)
+    output  = border $ viewport OutputViewport Horizontal $ hLimit 160 $ vLimit 100 $ drawOutput OutputCursor (_outputState st)
     sidebar = border $ hLimit 60 $ viewport Sidebar Vertical $ vBox $ map (str . show) ["Sidebar"]
 
 

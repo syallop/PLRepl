@@ -11,11 +11,12 @@ data Name
 
   -- The editor widget.
   | EditorWidget
-
   | EditorViewport
+  | EditorCursor
 
   | OutputWidget
   | OutputViewport
+  | OutputCursor
 
   -- The entire sidebar.
   | Sidebar

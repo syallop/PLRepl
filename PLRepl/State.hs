@@ -61,10 +61,11 @@ newOutputState
 newOutputState lines = EditorState (E.makeEditor $ foldr E.prependLine E.emptyLines $ map E.textLine lines) (E.tallerView 30 $ E.widerView 80 $ E.emptyView)
 
 drawEditor
-  :: EditorState
+  :: n
+  -> EditorState
   -> Widget n
-drawEditor (EditorState editor view) =
-  str . Text.unpack . Text.unlines . map E.lineText . E.renderLines . E.viewEditor view $ editor
+drawEditor editorCursor (EditorState editor view) =
+  (\(lines,pos) -> Brick.showCursor editorCursor (Location pos) . str . Text.unpack . Text.unlines . map E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
 
 editorText
   :: EditorState
@@ -73,7 +74,8 @@ editorText (EditorState editor _view) =
   Text.unlines . map E.lineText . E.renderLines . E.editorLines $ editor
 
 drawOutput
-  :: OutputState
+  :: n
+  -> OutputState
   -> Widget n
 drawOutput = drawEditor
 
