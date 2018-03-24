@@ -77,7 +77,8 @@ initialState initialFocus = State
   where
     initialReplCtx =
       let ReplCtx exprBindCtx typeBindCtx typeBindings typeCtx = emptyReplCtx
-       in ReplCtx exprBindCtx typeBindCtx typeBindings $ fromJust $ insertType "Unit" (fixType $ SumT []) typeCtx
+       in ReplCtx exprBindCtx typeBindCtx typeBindings $ fromJust $ insertType "Bool" (fixType $ SumT $ map fixType $ [ProductT [], ProductT []])
+                                                       $ fromJust $ insertType "Unit" (fixType $ SumT []) typeCtx
 
     initialTypeCtxState = typeCtxStateGivenReplCtx initialReplCtx
 
