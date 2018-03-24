@@ -33,4 +33,3 @@ outputText
   -> Text.Text
 outputText = editorText
 
-

@@ -32,6 +32,9 @@ executable pl
                      , PLRepl.Output
                      , PLRepl.Output.Event
                      , PLRepl.Output.State
+                     , PLRepl.TypeCtx
+                     , PLRepl.TypeCtx.Event
+                     , PLRepl.TypeCtx.State
 
   default-language:    Haskell2010
 

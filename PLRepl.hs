@@ -40,11 +40,11 @@ import qualified Data.Text as Text
 
 -- | The ReplApp is a Brick App which handles `Events` to update `State`
 -- making use of `Name`'s to name resources.
-type ReplApp = App PL.State PL.Event PL.Name
+type ReplApp = App (PL.State PL.Name) (PL.Event PL.Name) PL.Name
 
 -- | replApp is a Brick app providing a repl for PL.
 replApp
-  :: BChan PL.Event
+  :: BChan (PL.Event PL.Name)
   -> ReplApp
 replApp chan = App
   { -- No actions needed on startup.
@@ -54,7 +54,11 @@ replApp chan = App
   , appHandleEvent = handleEvent chan
 
     -- Always pick the Editor widget for the cursor.
-  , appChooseCursor = \st -> showCursorNamed (if _focusEditor st then EditorCursor else OutputCursor)
+  , appChooseCursor = \st -> case _focusOn st of
+                               Nothing
+                                 -> const Nothing
+                               Just n
+                                 -> showCursorNamed n
 
     -- Named attributes describing reusable layout and drawing properties.
   , appAttrMap = const attributes
@@ -65,28 +69,32 @@ replApp chan = App
 
 -- | Update the repl state in response to events.
 handleEvent
-  :: BChan PL.Event
-  -> PL.State
-  -> BrickEvent PL.Name PL.Event
-  -> EventM PL.Name (Next PL.State)
-handleEvent chan (st@(PL.State replCtx editorSt outputSt focus)) ev = case ev of
+  :: BChan (PL.Event PL.Name)
+  -> PL.State PL.Name
+  -> BrickEvent PL.Name (PL.Event PL.Name)
+  -> EventM PL.Name (Next (PL.State PL.Name))
+handleEvent chan (st@(PL.State replCtx editorSt outputSt typeCtxSt focus)) ev = case ev of
   -- an event from our application
   AppEvent appEv -> case appEv of
     -- Replctx must be updated
     PL.ReplaceReplCtx replCtx'
-      -> continue (PL.State replCtx' editorSt outputSt focus)
+      -> continue (PL.State replCtx' editorSt outputSt typeCtxSt focus)
 
     -- An event to the editor
     PL.EditorEv editorEv
       -> do editorSt' <- handleEditorEvent editorEv editorSt
-            continue (PL.State replCtx editorSt' outputSt focus)
+            continue (PL.State replCtx editorSt' outputSt typeCtxSt focus)
 
     PL.OutputEv outputEv
       -> do outputSt' <- handleOutputEvent outputEv outputSt
-            continue (PL.State replCtx editorSt outputSt' focus)
+            continue (PL.State replCtx editorSt outputSt' typeCtxSt focus)
 
-    PL.ToggleFocus
-      -> continue (PL.State replCtx editorSt outputSt (not focus))
+    PL.TypeCtxEv typeCtxEv
+      -> do typeCtxSt' <- handleTypeCtxEvent typeCtxEv typeCtxSt
+            continue (PL.State replCtx editorSt outputSt typeCtxSt' focus)
+
+    PL.FocusOn n
+      -> continue (PL.State replCtx editorSt outputSt typeCtxSt n)
 
   -- A virtual terminal event
   VtyEvent vtyEv -> case vtyEv of
@@ -94,41 +102,41 @@ handleEvent chan (st@(PL.State replCtx editorSt outputSt focus)) ev = case ev of
     Vty.EvKey keyEv modifiers -> case keyEv of
       Vty.KUp -> case modifiers of
         []
-          -> liftIO (writeBChan chan . eventDestination focus $ CursorUp) >> continue st
+          -> sendToFocused chan CursorUp focus >> continue st
         [Vty.MCtrl]
-          -> liftIO (writeBChan chan . eventDestination focus . TallerView $ 1)  >> continue st
+          -> sendToFocused chan (TallerView 1) focus >> continue st
         _ -> continue st
 
       Vty.KDown -> case modifiers of
         []
-          -> liftIO (writeBChan chan . eventDestination focus $ CursorDown)     >> continue st
+          -> sendToFocused chan CursorDown focus >> continue st
         [Vty.MCtrl]
-          -> liftIO (writeBChan chan . eventDestination focus . TallerView $ -1) >> continue st
+          -> sendToFocused chan (TallerView (-1)) focus >> continue st
         _ -> continue st
 
       Vty.KLeft -> case modifiers of
         []
-          -> liftIO (writeBChan chan . eventDestination focus $ CursorLeft)     >> continue st
+          -> sendToFocused chan CursorLeft focus >> continue st
         [Vty.MCtrl]
-          -> liftIO (writeBChan chan . eventDestination focus . WiderView $ -1)  >> continue st
+          -> sendToFocused chan (WiderView (-1)) focus >> continue st
         _ -> continue st
 
       Vty.KRight -> case modifiers of
         []
-          -> liftIO (writeBChan chan . eventDestination focus $ CursorRight)    >> continue st
+          -> sendToFocused chan CursorRight focus >> continue st
         [Vty.MCtrl]
-          -> liftIO (writeBChan chan . eventDestination focus . WiderView $ 1)   >> continue st
+          -> sendToFocused chan (WiderView 1) focus >> continue st
         _ -> continue st
 
       Vty.KChar c
         -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
 
       Vty.KDel
-        -> liftIO (writeBChan chan . EditorEv $ DeleteChar)     >> continue st
+        -> liftIO (writeBChan chan . EditorEv $ DeleteChar) >> continue st
 
       Vty.KEnter -> case modifiers of
         []
-          -> liftIO (writeBChan chan . EditorEv $ NewLine)        >> continue st
+          -> liftIO (writeBChan chan . EditorEv $ NewLine) >> continue st
         _ -> continue st
 
       Vty.KIns
@@ -146,15 +154,26 @@ handleEvent chan (st@(PL.State replCtx editorSt outputSt focus)) ev = case ev of
                   --   re-detecting the newlines.
                   -- - The printer should be passed the current width so it
                   --   wraps optimally.
-                  -> continue (PL.State replCtx editorSt (newOutputState $ Text.lines $ renderDocument err) False)
+                  -> continue (PL.State replCtx
+                                        editorSt
+                                        (newOutputState $ Text.lines $ renderDocument err)
+                                        (newTypeCtxState $ Text.lines $ renderDocument $ _typeCtx $ replCtx)
+                                        (Just OutputCursor))
 
                 -- A successful parse
                 Right a
                   -> do liftIO (writeBChan chan . ReplaceReplCtx $ replCtx')
-                        continue (PL.State replCtx' emptyEditorState (newOutputState $ Text.lines $ renderDocument a) True)
+                        continue (PL.State replCtx'
+                                           emptyEditorState
+                                           (newOutputState $ Text.lines $ renderDocument a)
+                                           (newTypeCtxState $ Text.lines $ renderDocument $ _typeCtx $ replCtx')
+                                           (Just EditorCursor))
 
       Vty.KPageUp
-        -> liftIO (writeBChan chan ToggleFocus) >> continue st
+        -> liftIO (writeBChan chan $ FocusOn $ fmap nextFocus $ focus) >> continue st
+
+      Vty.KPageDown
+        -> liftIO (writeBChan chan . FocusOn . fmap previousFocus $ focus) >> continue st
 
       Vty.KEsc
         -> liftIO $ exitSuccess
@@ -165,8 +184,21 @@ handleEvent chan (st@(PL.State replCtx editorSt outputSt focus)) ev = case ev of
 
   _ -> continue st
 
-eventDestination :: Bool -> EditorEvent -> PL.Event
-eventDestination focusEditor = if focusEditor then EditorEv else OutputEv
+-- | If an editor like thing is focused, send it an event.
+sendToFocused
+  :: BChan (PL.Event PL.Name)
+  -> EditorEvent
+  -> Maybe PL.Name
+  -> EventM PL.Name ()
+sendToFocused chan event = maybe (pure ()) (\focus -> liftIO $ writeBChan chan . eventDestination focus $ event)
+
+-- | Given a focus name, decide which editor like thing should recieve an event.
+eventDestination :: PL.Name -> EditorEvent -> PL.Event PL.Name
+eventDestination focusOn = case focusOn of
+  EditorCursor  -> EditorEv
+  OutputCursor  -> OutputEv
+  TypeCtxCursor -> TypeCtxEv
+  _ -> EditorEv
 
 -- | Named attributes describing reusable layout and drawing properties.
 attributes :: AttrMap
@@ -174,17 +206,20 @@ attributes = attrMap defAttr []
 
 -- | Convert the state to a list of widgets that may be drawn.
 drawUI
-  :: PL.State
+  :: PL.State PL.Name
   -> [Widget PL.Name]
 drawUI st =
   [ center $ border $ hLimit 200 $ vLimit 50 $ (editor <=> output) <+> sidebar
   ]
   where
-    editor, output, sidebar :: Widget PL.Name
-    editor  = border $ viewport EditorViewport Vertical $ hLimit 60 $ vLimit 48 $ drawEditor EditorCursor (_editorState st)
-    output  = border $ viewport OutputViewport Horizontal $ hLimit 160 $ vLimit 100 $ drawOutput OutputCursor (_outputState st)
-    sidebar = border $ hLimit 60 $ viewport Sidebar Vertical $ vBox $ map (str . show) ["Sidebar"]
+    editor :: Widget PL.Name
+    editor = border $ viewport EditorViewport Vertical $ hLimit 60 $ vLimit 48 $ drawEditor EditorCursor (_editorState st)
 
+    output :: Widget PL.Name
+    output  = border $ viewport OutputViewport Horizontal $ hLimit 160 $ vLimit 100 $ drawOutput OutputCursor (_outputState st)
+
+    sidebar :: Widget PL.Name
+    sidebar = border $ viewport TypeCtxViewport Horizontal $ hLimit 50 $ vLimit 20 $ drawTypeCtx TypeCtxCursor (_typeCtxState st)
 
 main :: IO ()
 main = run
@@ -193,5 +228,5 @@ run :: IO ()
 run = do
   -- Buffer events
   evChan <- newBChan 10
-  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) initialState
+  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) (initialState $ Just EditorCursor)
 
