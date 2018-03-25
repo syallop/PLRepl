@@ -7,6 +7,8 @@ module PLRepl.TypeCtx
 import PLRepl.TypeCtx.Event as X
 import PLRepl.TypeCtx.State as X
 
+import PL
+
 drawTypeCtx
   :: TypeCtx tb
   -> Widget PL.Name

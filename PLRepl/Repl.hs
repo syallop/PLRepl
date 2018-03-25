@@ -15,6 +15,9 @@ module PLRepl.Repl
   , replEval
   , replPrint
   , replStep
+
+  , plGrammarParser
+  , megaparsecGrammarParser
   )
   where
 
@@ -28,6 +31,9 @@ import PL.ExprLike
 import PL.Kind
 import PL.Grammar.Lispy
 import PL.Grammar
+import qualified PL.Grammar    as PL
+import qualified PLParser as PLParser
+import qualified PL.Megaparsec as PLMega
 import PL.Name
 import PL.Reduce
 import PL.Type hiding (parens)
@@ -48,6 +54,7 @@ import Data.Monoid hiding (Sum,Product)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import qualified Text.Megaparsec as Mega
 
 -- | The current st of the repl is a consistent view of type and expression bindings.
 data ReplState b tb = ReplState
@@ -125,7 +132,9 @@ replError
   -> Repl b abs tb r
 replError err = Repl $ \st -> (st,Left err)
 
--- Read text and parse it into an expr
+-- Read text and parse it into an expr when supplied Grammars for bindings,
+-- abstractions and type bindings and the means to convert these grammars into
+-- parsing functions.
 replRead
   :: ( Ord tb
      , Eq b
@@ -138,21 +147,49 @@ replRead
      , Show abs
      , Show tb
      )
-  => Text        -- ^ Input text
-  -> Grammar b   -- ^ Expression bindings (E.G. Var)
-  -> Grammar abs -- ^ Expression abstraction (E.G. Type)
-  -> Grammar tb  -- ^ Type bindings (E.G. Var)
+  => (forall a. Document a => Grammar a -> Text -> Repl b abs tb a) -- ^ Convert a Grammar to a parser
+  -> Grammar b                                        -- ^ Expression bindings (E.G. Var)
+  -> Grammar abs                                      -- ^ Expression abstraction (E.G. Type)
+  -> Grammar tb                                       -- ^ Type bindings (E.G. Var)
+  -> Text                                             -- ^ Input text
   -> Repl b abs tb (Expr b abs tb)
-replRead input b abs tb = case runParser (toParser $ expr b abs tb) input of
-  f@(ParseFailure expected cursor)
-    -> replError . EMsg . document $ f
+replRead grammarParser b abs tb = grammarParser $ expr b abs tb
 
-  s@(ParseSuccess expr cursor)
-    | Text.null $ remainder cursor
-     -> pure expr
+-- Convert a Grammar to a parser using PLParser.
+plGrammarParser
+  :: Document a
+  => Grammar a
+  -> Text
+  -> Repl b abs tb a
+plGrammarParser grammar =
+  let plParser = PL.toParser grammar
+   in \txt -> case PLParser.runParser plParser txt of
+                f@(ParseFailure expected cursor)
+                  -> replError . EMsg . document $ f
 
-    | otherwise
-     -> replError $ EMsg $ text "Parse succeeded but there were trailing characters: " <> document cursor
+                s@(ParseSuccess expr cursor)
+                  | Text.null $ remainder cursor
+                   -> pure expr
+
+                  | otherwise
+                   -> replError $ EMsg $ text "Parse succeeded but there were trailing characters: " <> document cursor
+
+-- Convert a Grammar to a parser using Megaparsec.
+megaparsecGrammarParser
+  :: Grammar a
+  -> Text
+  -> Repl b abs tb a
+megaparsecGrammarParser grammar =
+  let megaparsecParser = PLMega.toParser grammar
+   in \txt -> case Mega.runParser megaparsecParser "" txt of
+                Left err
+                  -> replError . EMsg . document $ err
+
+                Right expr
+                  -> pure expr
+
+instance (Ord t, Mega.ShowToken t, Mega.ShowErrorComponent e) => Document (Mega.ParseError t e) where
+  document = text . Text.pack . Mega.parseErrorPretty
 
 -- Type check an expression in the repl context.
 replTypeCheck
@@ -255,13 +292,14 @@ replStep
      , Show abs
      , Show tb
      )
-  => Grammar b
+  => (forall a. Document a => Grammar a -> Text -> Repl b abs tb a) -- ^ Convert a Grammar to a parser
+  -> Grammar b
   -> Grammar abs
   -> Grammar tb
   -> Text
   -> Repl b abs tb Text
-replStep b abs tb txt = do
-  expr         <- replRead txt b abs tb
+replStep grammarParser b abs tb txt = do
+  expr         <- replRead grammarParser b abs tb txt
   (redExpr,ty) <- replEval expr
   replPrint (expr,redExpr,ty)
 

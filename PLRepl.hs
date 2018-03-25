@@ -141,7 +141,8 @@ handleEvent chan (st@(PL.State replState editorSt outputSt typeCtxSt focus)) ev 
               let ?eb             = var
                   ?abs            = typ tyVar
                   ?tb             = tyVar
-              let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep var (typ tyVar) tyVar . editorText $ editorSt
+              {-let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep plGrammarParser var (typ tyVar) tyVar . editorText $ editorSt-}
+              let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep megaparsecGrammarParser var (typ tyVar) tyVar . editorText $ editorSt
               case eRes of
                 -- Some repl error
                 Left err

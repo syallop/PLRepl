@@ -17,6 +17,7 @@ executable pl
                      , text
                      , directory
                      , containers
+                     , megaparsec
                      , brick
                      , vty
                      , PL
