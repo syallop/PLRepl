@@ -1,23 +1,31 @@
 {-# LANGUAGE
     RankNTypes
   , FlexibleContexts
+  , GADTs
   , OverloadedStrings
   , UndecidableInstances
   #-}
 module PLRepl.Repl
-  ( ReplState (..)
+  ( Read
+  , Eval
+  , Print
+  , ReplConfig (..)
+  , ReplState (..)
   , emptyReplState
-  , Repl (..)
-  , replError
+  , Repl ()
+  , _unRepl
+
+  -- Core API.
+  , replStep
   , replRead
-  , replTypeCheck
-  , replReduce
   , replEval
   , replPrint
-  , replStep
 
-  , plGrammarParser
-  , megaparsecGrammarParser
+  -- Convenience functions
+  , replError
+  , replTypeCheck
+  , replReduce
+  , replEvalSimple
   )
   where
 
@@ -28,17 +36,17 @@ import PL.Case
 import PL.Error
 import PL.Expr
 import PL.ExprLike
-import PL.Kind
-import PL.Grammar.Lispy
 import PL.Grammar
-import qualified PL.Grammar    as PL
-import qualified PLParser as PLParser
-import qualified PL.Megaparsec as PLMega
+import PL.Grammar.Lispy
+import PL.Kind
 import PL.Name
 import PL.Reduce
 import PL.Type hiding (parens)
 import PL.Type.Eq
 import PL.TypeCtx
+import qualified PL.Grammar    as PL
+import qualified PL.Megaparsec as PLMega
+import qualified PLParser as PLParser
 
 import PLParser
 import PLPrinter
@@ -56,14 +64,53 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Text.Megaparsec as Mega
 
+import Prelude hiding (Read)
+
+-- | A Read function takes a Grammar on 'o' and attempts to parse text into an
+-- 'o'.
+type Read b abs tb o = Document o => Grammar o -> Text -> Repl b abs tb o o
+
+-- | An Eval function transforms some value 'o'. Into a Repl function which may
+-- succeed with a new expression along with its type.
+-- A return value of Nothing is still a success, just with no new expression.
+type Eval b abs tb o = o -> Repl b abs tb o (Maybe (Expr b abs tb,Type tb))
+
+-- | A Print function takes a parsed thing 'o', a possible expression and type
+-- it reduced to and returns some output Text to print.
+type Print b abs tb o = Document o => o -> Maybe (Expr b abs tb, Type tb) -> Repl b abs tb o Text
+
+-- | A ReplConfig is a set of active Grammar alongside Read, Eval and Print
+-- functions defined upon it.
+data ReplConfig b abs tb o where
+  ReplConfig
+    :: { _someGrammar :: Document o => Grammar o -- A Grammar to read.
+       , _read        :: Read  b abs tb o
+       , _eval        :: Eval  b abs tb o
+       , _print       :: Print b abs tb o
+       }
+    -> ReplConfig b abs tb o
+
+-- The empty ReplConfig always fails and outputs error documents for Read Eval
+-- and Print.
+emptyReplConfig
+  :: ReplConfig b abs tb o
+emptyReplConfig = ReplConfig
+  { _someGrammar = GEmpty -- The Grammar that always fails.
+  , _read        = \_ _ -> replError $ EMsg $ text "No read function defined in replConfig"
+  , _eval        = \_   -> replError $ EMsg $ text "No eval function defined in replConfig"
+  , _print       = \_ _ -> replError $ EMsg $ text "No print function defined in replConfig"
+  }
+
 -- | The current st of the repl is a consistent view of type and expression bindings.
-data ReplState b tb = ReplState
-  {_exprBindCtx  :: ExprBindCtx b tb -- Expr bindings 'b' have types
-  ,_typeBindCtx  :: TypeBindCtx tb   -- Type bindings have kinds
+data ReplState b abs tb o = ReplState
+  { _replConfig   :: ReplConfig b abs tb o
 
-  ,_typeBindings :: TypeBindings tb -- Type bindings may have a bound or unbound type
+  , _exprBindCtx  :: ExprBindCtx b tb -- Expr bindings 'b' have types
+  , _typeBindCtx  :: TypeBindCtx tb   -- Type bindings have kinds
 
-  ,_typeCtx      :: TypeCtx tb      -- Names can be given to types
+  , _typeBindings :: TypeBindings tb -- Type bindings may have a bound or unbound type
+
+  , _typeCtx      :: TypeCtx tb      -- Names can be given to types
   }
 
 instance
@@ -72,8 +119,8 @@ instance
   , Document (TypeCtx tb)
   , Binds b (Type tb)
   , Binds tb Kind
-  ) => Document (ReplState b tb) where
-    document (ReplState exprBindCtx typeBindCtx typeBindings typeCtx) = mconcat
+  ) => Document (ReplState b abs tb o) where
+    document (ReplState replConfig exprBindCtx typeBindCtx typeBindings typeCtx) = mconcat
       [ document exprBindCtx
       , lineBreak
       , document typeBindCtx
@@ -88,14 +135,15 @@ emptyReplState
   :: (Binds b (Type tb)
      ,Binds tb Kind
      )
-  => ReplState b tb
+  => ReplState b abs tb o
 emptyReplState = ReplState
-  {_exprBindCtx  = emptyCtx
-  ,_typeBindCtx  = emptyCtx
+  { _replConfig   = emptyReplConfig
+  , _exprBindCtx  = emptyCtx
+  , _typeBindCtx  = emptyCtx
 
-  ,_typeBindings = emptyBindings
+  , _typeBindings = emptyBindings
 
-  ,_typeCtx     = mempty
+  , _typeCtx     = mempty
   }
 
 -- | A Repl has replst as state which it always returns alongside a successful
@@ -103,21 +151,24 @@ emptyReplState = ReplState
 --
 -- This means, for example, we can update our state and throw an error at the
 -- same time. One usecase would be tracking line numbers of entered expressions, valid or not.
-newtype Repl b abs tb a = Repl
-  {_unRepl :: ReplState b tb -> (ReplState b tb, Either (Error tb) a)}
+--
+-- 'o' is the output type the grammar specifies.
+-- 'a' is the final result type.
+newtype Repl b abs tb o a = Repl
+  {_unRepl :: ReplState b abs tb o -> (ReplState b abs tb o, Either (Error tb) a)}
 
-instance Functor (Repl b abs tb) where
+instance Functor (Repl b abs tb o) where
   fmap f (Repl r) = Repl $ \st -> let (st',res) = r st
                                     in (st', case res of
                                                 Left err -> Left err
                                                 Right a  -> Right $ f a)
 
-instance Applicative (Repl b abs tb) where
+instance Applicative (Repl b abs tb o) where
   pure = return
   (<*>) = ap
 
 
-instance Monad (Repl b abs tb) where
+instance Monad (Repl b abs tb o) where
   return a = Repl $ \st -> (st,Right a)
 
   (Repl f) >>= fab = Repl $ \st -> let (st',res) = f st
@@ -129,67 +180,8 @@ instance Monad (Repl b abs tb) where
 -- | Inject an error into the repl
 replError
   :: Error tb
-  -> Repl b abs tb r
+  -> Repl b abs tb o x
 replError err = Repl $ \st -> (st,Left err)
-
--- Read text and parse it into an expr when supplied Grammars for bindings,
--- abstractions and type bindings and the means to convert these grammars into
--- parsing functions.
-replRead
-  :: ( Ord tb
-     , Eq b
-     , Eq abs
-     , Document b
-     , Document abs
-     , Document tb
-     , Constraints b abs tb
-     , Show b
-     , Show abs
-     , Show tb
-     )
-  => (forall a. Document a => Grammar a -> Text -> Repl b abs tb a) -- ^ Convert a Grammar to a parser
-  -> Grammar b                                        -- ^ Expression bindings (E.G. Var)
-  -> Grammar abs                                      -- ^ Expression abstraction (E.G. Type)
-  -> Grammar tb                                       -- ^ Type bindings (E.G. Var)
-  -> Text                                             -- ^ Input text
-  -> Repl b abs tb (Expr b abs tb)
-replRead grammarParser b abs tb = grammarParser $ expr b abs tb
-
--- Convert a Grammar to a parser using PLParser.
-plGrammarParser
-  :: Document a
-  => Grammar a
-  -> Text
-  -> Repl b abs tb a
-plGrammarParser grammar =
-  let plParser = PL.toParser grammar
-   in \txt -> case PLParser.runParser plParser txt of
-                f@(ParseFailure expected cursor)
-                  -> replError . EMsg . document $ f
-
-                s@(ParseSuccess expr cursor)
-                  | Text.null $ remainder cursor
-                   -> pure expr
-
-                  | otherwise
-                   -> replError $ EMsg $ text "Parse succeeded but there were trailing characters: " <> document cursor
-
--- Convert a Grammar to a parser using Megaparsec.
-megaparsecGrammarParser
-  :: Grammar a
-  -> Text
-  -> Repl b abs tb a
-megaparsecGrammarParser grammar =
-  let megaparsecParser = PLMega.toParser grammar
-   in \txt -> case Mega.runParser megaparsecParser "" txt of
-                Left err
-                  -> replError . EMsg . document $ err
-
-                Right expr
-                  -> pure expr
-
-instance (Ord t, Mega.ShowToken t, Mega.ShowErrorComponent e) => Document (Mega.ParseError t e) where
-  document = text . Text.pack . Mega.parseErrorPretty
 
 -- Type check an expression in the repl context.
 replTypeCheck
@@ -202,7 +194,7 @@ replTypeCheck
      , Document tb
      )
   => Expr b abs tb
-  -> Repl b abs tb (Type tb)
+  -> Repl b abs tb o (Type tb)
 replTypeCheck expr = Repl $ \st ->
   case exprType (_exprBindCtx st)
                 (_typeBindCtx st)
@@ -221,13 +213,14 @@ replReduce
      , Eq b
      )
   => Expr b abs tb
-  -> Repl b abs tb (Expr b abs tb)
+  -> Repl b abs tb o (Expr b abs tb)
 replReduce initialExpr = case reduce initialExpr of
   Left err   -> replError err
   Right expr -> pure expr
 
--- Type check and reduce an expression
-replEval
+-- A simple Eval function which takes a plain Expr, type checks it
+-- and then reduces.
+replEvalSimple
   :: ( Binds b (Type tb)
      , Binds tb Kind
      , Abstracts abs tb
@@ -237,69 +230,50 @@ replEval
      , Document abs
      , Document tb
      )
-  => Expr b abs tb
-  -> Repl b abs tb (Expr b abs tb,Type tb)
-replEval expr = do
+  => Eval b abs tb (Expr b abs tb)
+replEvalSimple expr = do
   ty      <- replTypeCheck expr
   redExpr <- replReduce    expr
-  pure (redExpr,ty)
+  pure $ Just (redExpr,ty)
 
--- Transform a parsed expr, its reduction and type into some output to print
+-- | Feed read text into the Repls configured read function.
+replRead
+  :: Document o
+  => Text
+  -> Repl b abs tb o o
+replRead input = Repl $ \replState ->
+  let readF      = _read . _replConfig $ replState
+      grammar    = _someGrammar . _replConfig $ replState
+      Repl replF = readF grammar input
+    in replF replState
+
+replEval
+  :: o -- The thing to evaluate
+  -> Repl b abs tb o (Maybe (Expr b abs tb,Type tb))
+replEval a = Repl $ \replState ->
+  let evalF = _eval . _replConfig $ replState
+      Repl replF = evalF a
+   in replF replState
+
 replPrint
-  :: ( Document b
-     , Document abs
-     , Document tb
-     , Implicits b abs tb
-     , Ord tb
-     , Eq b
-     , Eq abs
-     , Show b
-     , Show abs
-     , Show tb
-     )
-  => (Expr b abs tb,Expr b abs tb,Type tb)
-  -> Repl b abs tb Text
-replPrint (inputExpr,redExpr,ty) = pure . render . mconcat $
-  [ text "input expression:"
-  , lineBreak
-  , fromMaybe mempty $ pprint (toPrinter exprI) inputExpr
+  :: Document o
+  => o
+  -> Maybe (Expr b abs tb, Type tb)
+  -> Repl b abs tb o Text
+replPrint a mEvaluated = Repl $ \replState ->
+  let printF = _print . _replConfig $ replState
+      Repl replF = printF a mEvaluated
+   in replF replState
 
-  , text "reduces to:"
-  , lineBreak
-
-  , fromMaybe mempty $ pprint (toPrinter exprI) redExpr
-  , lineBreak
-
-  , text "with type:"
-  , lineBreak
-
-  , fromMaybe mempty $ pprint (toPrinter typI) ty
-  , lineBreak
-  ]
-
--- Produce the next context and parse, type-check and reduce or error.
+-- Read, Eval and return the text to be printed.
+-- Drive this function with input, do something with the output and loop for a
+-- REPL.
 replStep
-  :: ( Ord tb
-     , Document b
-     , Document abs
-     , Document tb
-     , Implicits b abs tb
-     , Binds b (Type tb)
-     , Binds tb Kind
-     , Abstracts abs tb
-     , Eq b
-     , Show b
-     , Show abs
-     , Show tb
-     )
-  => (forall a. Document a => Grammar a -> Text -> Repl b abs tb a) -- ^ Convert a Grammar to a parser
-  -> Grammar b
-  -> Grammar abs
-  -> Grammar tb
-  -> Text
-  -> Repl b abs tb Text
-replStep grammarParser b abs tb txt = do
-  expr         <- replRead grammarParser b abs tb txt
-  (redExpr,ty) <- replEval expr
-  replPrint (expr,redExpr,ty)
+  :: Document o
+  => Text
+  -> Repl b abs tb o Text
+replStep input = do
+  parsedOutput <- replRead input
+  mEvaluated   <- replEval parsedOutput
+  replPrint parsedOutput mEvaluated
 

@@ -6,10 +6,11 @@
   #-}
 module Main where
 
+import PLRepl.Repl as PL
+import PLRepl.Repl.Lispy as PL
 import PLRepl.Widgets.Event as PL
 import PLRepl.Widgets.Name as PL
 import PLRepl.Widgets.State as PL
-import PLRepl.Repl as PL
 
 import PL.Grammar.Lispy
 import PL.TyVar
@@ -142,7 +143,8 @@ handleEvent chan (st@(PL.State replState editorSt outputSt typeCtxSt focus)) ev 
                   ?abs            = typ tyVar
                   ?tb             = tyVar
               {-let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep plGrammarParser var (typ tyVar) tyVar . editorText $ editorSt-}
-              let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep megaparsecGrammarParser var (typ tyVar) tyVar . editorText $ editorSt
+              {-let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep megaparsecGrammarParser var (typ tyVar) tyVar . editorText $ editorSt-}
+              let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep . editorText $ editorSt
               case eRes of
                 -- Some repl error
                 Left err

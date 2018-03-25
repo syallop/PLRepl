@@ -19,6 +19,8 @@ import PLRepl.Widgets.TypeCtx.Event
 import PLRepl.Repl
 
 import PL.TyVar
+import PL.Expr
+import PL.Type
 import PL.Var
 
 -- | Events the repl and its sub-components may emit and handle.
@@ -37,5 +39,5 @@ data Event n
   | FocusOn (Maybe n)
 
   -- The ReplState has been replaced with this value.
-  | ReplaceReplState (ReplState Var TyVar)
+  | ReplaceReplState (ReplState Var (Type TyVar) TyVar (Expr Var (Type TyVar) TyVar))
 

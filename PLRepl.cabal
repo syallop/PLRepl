@@ -39,6 +39,7 @@ executable pl
                      , PLRepl.Widgets.TypeCtx.Event
                      , PLRepl.Widgets.TypeCtx.State
                      , PLRepl.Repl
+                     , PLRepl.Repl.Lispy
 
   default-language:    Haskell2010
 

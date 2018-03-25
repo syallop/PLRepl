@@ -1,4 +1,4 @@
-module PLRepl.Editor
+module PLRepl.Widgets.Editor
   ( module X
   ) where
 

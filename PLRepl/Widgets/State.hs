@@ -30,12 +30,16 @@ import PLRepl.Widgets.Output.State
 import PLRepl.Widgets.TypeCtx.State
 
 import PLRepl.Repl
+import PLRepl.Repl.Lispy
 
+import PL.Expr
 import PL.FixType
 import PL.TyVar
 import PL.Type
 import PL.TypeCtx
 import PL.Var
+
+import PL.Grammar.Lispy
 
 import PLPrinter
 import qualified PLEditor as E
@@ -47,7 +51,8 @@ import qualified Data.Text as Text
 -- | The state of the entire repl and sub-widgets.
 data State n = State
   { -- The state of the Repl includes types, expressions and bindings etc.
-    _replState    :: ReplState Var TyVar
+    -- Currently configured with a Grammar on Expr Var (Type TyVar) TyVar
+    _replState    :: ReplState Var (Type TyVar) TyVar (Expr Var (Type TyVar) TyVar)
 
    -- The editorState corresponds to an input widget into which expressions are
    -- entered.
@@ -77,8 +82,11 @@ initialState initialFocus = State
   }
   where
     initialReplState =
-      let ReplState exprBindCtx typeBindCtx typeBindings typeCtx = emptyReplState
-       in ReplState exprBindCtx typeBindCtx typeBindings
+      let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx = emptyReplState
+       in ReplState (lispyExprReplConfig megaparsecGrammarParser var (typ tyVar) tyVar)
+                    exprBindCtx
+                    typeBindCtx
+                    typeBindings
             $ fromJust $ insertType "Bool" (fixType $ SumT $ map fixType $ [ProductT [], ProductT []])
             $ fromJust $ insertType "Unit" (fixType $ SumT []) typeCtx
 
@@ -86,7 +94,7 @@ initialState initialFocus = State
 
 -- | What is the typeCtxState output given the current ReplState.
 typeCtxStateGivenReplState
-  :: ReplState Var TyVar
+  :: ReplState Var (Type TyVar) TyVar o
   -> TypeCtxState
 typeCtxStateGivenReplState =
   newTypeCtxState . Text.lines . renderDocument . _typeCtx
