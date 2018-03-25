@@ -1,11 +1,12 @@
-module PLRepl.Editor.Event
+module PLRepl.Widgets.Editor.Event
   ( EditorEvent (..)
   , handleEditorEvent
   )
   where
 
+import PLRepl.Widgets.Editor.State
 import qualified PLEditor as E
-import PLRepl.Editor.State
+
 import Brick
 
 -- | An event which may be sent to the Editor widget.

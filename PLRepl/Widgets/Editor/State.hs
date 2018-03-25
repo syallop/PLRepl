@@ -1,4 +1,4 @@
-module PLRepl.Editor.State
+module PLRepl.Widgets.Editor.State
   ( EditorState (..)
   , emptyEditorState
   , drawEditor
@@ -6,8 +6,9 @@ module PLRepl.Editor.State
   )
   where
 
-import Brick
 import qualified PLEditor as E
+
+import Brick
 import qualified Data.Text as Text
 
 -- | The editor state is the Editor and a View into its lines.

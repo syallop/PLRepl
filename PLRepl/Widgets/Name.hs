@@ -1,4 +1,4 @@
-module PLRepl.Name
+module PLRepl.Widgets.Name
   ( Name (..)
   , nextFocus
   , previousFocus

@@ -1,4 +1,4 @@
-module PLRepl.TypeCtx.State
+module PLRepl.Widgets.TypeCtx.State
   ( TypeCtxState
   , emptyTypeCtxState
   , newTypeCtxState
@@ -7,10 +7,13 @@ module PLRepl.TypeCtx.State
   )
   where
 
-import Brick
+import PLRepl.Widgets.Editor.State
+
 import qualified PLEditor as E
+
+import Brick
+
 import qualified Data.Text as Text
-import PLRepl.Editor.State
 
 type TypeCtxState = EditorState
 
@@ -32,5 +35,4 @@ typeCtxText
   :: TypeCtxState
   -> Text.Text
 typeCtxText = editorText
-
 

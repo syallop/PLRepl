@@ -1,4 +1,4 @@
-module PLRepl.Event
+module PLRepl.Widgets.Event
   ( Event (..)
   , EditorEvent (..)
   , handleEditorEvent
@@ -11,13 +11,15 @@ module PLRepl.Event
   )
   where
 
+import PLRepl.Widgets.State
+import PLRepl.Widgets.Editor.Event
+import PLRepl.Widgets.Output.Event
+import PLRepl.Widgets.TypeCtx.Event
+
+import PLRepl.Repl
+
 import PL.TyVar
 import PL.Var
-import PLRepl.Repl
-import PLRepl.State
-import PLRepl.Editor.Event
-import PLRepl.Output.Event
-import PLRepl.TypeCtx.Event
 
 -- | Events the repl and its sub-components may emit and handle.
 data Event n

@@ -6,9 +6,9 @@
   #-}
 module Main where
 
-import PLRepl.Event as PL
-import PLRepl.Name as PL
-import PLRepl.State as PL
+import PLRepl.Widgets.Event as PL
+import PLRepl.Widgets.Name as PL
+import PLRepl.Widgets.State as PL
 import PLRepl.Repl as PL
 
 import PL.Grammar.Lispy

@@ -1,11 +1,11 @@
-module PLRepl.TypeCtx
+module PLRepl.Widgets.TypeCtx
   ( module X
   , drawTypeCtx
   )
   where
 
-import PLRepl.TypeCtx.Event as X
-import PLRepl.TypeCtx.State as X
+import PLRepl.Widgets.TypeCtx.Event as X
+import PLRepl.Widgets.TypeCtx.State as X
 
 import PL
 

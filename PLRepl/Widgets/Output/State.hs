@@ -1,4 +1,4 @@
-module PLRepl.Output.State
+module PLRepl.Widgets.Output.State
   ( OutputState
   , emptyOutputState
   , newOutputState
@@ -6,11 +6,12 @@ module PLRepl.Output.State
   , outputText
   )
   where
+import PLRepl.Widgets.Editor.State
+
+import qualified PLEditor as E
 
 import Brick
-import qualified PLEditor as E
 import qualified Data.Text as Text
-import PLRepl.Editor.State
 
 type OutputState = EditorState
 

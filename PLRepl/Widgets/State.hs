@@ -2,7 +2,7 @@
     FlexibleContexts
   , OverloadedStrings
   #-}
-module PLRepl.State
+module PLRepl.Widgets.State
   ( State (..)
   , EditorState (..)
   , initialState
@@ -24,24 +24,25 @@ module PLRepl.State
   )
   where
 
-import PLRepl.Name
-import PLRepl.Repl
-import PLRepl.Editor.State
-import PLRepl.Output.State
-import PLRepl.TypeCtx.State
+import PLRepl.Widgets.Editor.State
+import PLRepl.Widgets.Name
+import PLRepl.Widgets.Output.State
+import PLRepl.Widgets.TypeCtx.State
 
-import qualified PLEditor as E
+import PLRepl.Repl
+
+import PL.FixType
 import PL.TyVar
-import PL.Var
 import PL.Type
 import PL.TypeCtx
-import PL.FixType
+import PL.Var
 
 import PLPrinter
+import qualified PLEditor as E
 
 import Brick
-import qualified Data.Text as Text
 import Data.Maybe
+import qualified Data.Text as Text
 
 -- | The state of the entire repl and sub-widgets.
 data State n = State
