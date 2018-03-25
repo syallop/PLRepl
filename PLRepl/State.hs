@@ -25,12 +25,12 @@ module PLRepl.State
   where
 
 import PLRepl.Name
+import PLRepl.Repl
 import PLRepl.Editor.State
 import PLRepl.Output.State
 import PLRepl.TypeCtx.State
 
 import qualified PLEditor as E
-import PL.Repl
 import PL.TyVar
 import PL.Var
 import PL.Type
@@ -46,7 +46,7 @@ import Data.Maybe
 -- | The state of the entire repl and sub-widgets.
 data State n = State
   { -- The state of the Repl includes types, expressions and bindings etc.
-    _replCtx      :: ReplCtx Var TyVar
+    _replState    :: ReplState Var TyVar
 
    -- The editorState corresponds to an input widget into which expressions are
    -- entered.
@@ -68,24 +68,25 @@ data State n = State
 -- | The initial state of the entire repl and sub-widgets.
 initialState :: Maybe n -> State n
 initialState initialFocus = State
-  { _replCtx      = initialReplCtx
+  { _replState    = initialReplState
   , _editorState  = emptyEditorState
   , _outputState  = emptyOutputState
   , _typeCtxState = initialTypeCtxState
   , _focusOn      = initialFocus
   }
   where
-    initialReplCtx =
-      let ReplCtx exprBindCtx typeBindCtx typeBindings typeCtx = emptyReplCtx
-       in ReplCtx exprBindCtx typeBindCtx typeBindings $ fromJust $ insertType "Bool" (fixType $ SumT $ map fixType $ [ProductT [], ProductT []])
-                                                       $ fromJust $ insertType "Unit" (fixType $ SumT []) typeCtx
+    initialReplState =
+      let ReplState exprBindCtx typeBindCtx typeBindings typeCtx = emptyReplState
+       in ReplState exprBindCtx typeBindCtx typeBindings
+            $ fromJust $ insertType "Bool" (fixType $ SumT $ map fixType $ [ProductT [], ProductT []])
+            $ fromJust $ insertType "Unit" (fixType $ SumT []) typeCtx
 
-    initialTypeCtxState = typeCtxStateGivenReplCtx initialReplCtx
+    initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
--- | What is the typeCtxState output given the current ReplCtx.
-typeCtxStateGivenReplCtx
-  :: ReplCtx Var TyVar
+-- | What is the typeCtxState output given the current ReplState.
+typeCtxStateGivenReplState
+  :: ReplState Var TyVar
   -> TypeCtxState
-typeCtxStateGivenReplCtx =
+typeCtxStateGivenReplState =
   newTypeCtxState . Text.lines . renderDocument . _typeCtx
 

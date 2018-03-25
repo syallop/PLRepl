@@ -11,9 +11,9 @@ module PLRepl.Event
   )
   where
 
-import PL.Repl
 import PL.TyVar
 import PL.Var
+import PLRepl.Repl
 import PLRepl.State
 import PLRepl.Editor.Event
 import PLRepl.Output.Event
@@ -34,6 +34,6 @@ data Event n
   -- Toggle focus to a name.
   | FocusOn (Maybe n)
 
-  -- The ReplCtx has been replaced with this value.
-  | ReplaceReplCtx (ReplCtx Var TyVar)
+  -- The ReplState has been replaced with this value.
+  | ReplaceReplState (ReplState Var TyVar)
 

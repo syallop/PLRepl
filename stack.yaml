@@ -1,23 +1,20 @@
-resolver: lts-9.18
-packages:
-- '.'
-- '../PL'
-- '../PLGrammar'
-- '../PLParser'
-- '../PLPrinter'
-- '../PLEditor'
-- location:
-    git: https://github.com/rootmos/haskeline.git
-    # Next commit adds linewrapping that doesnt take into account we've already
-    # line-wrapped and so newlines should 'reset' the line length count.
-    commit: bf8164bc747e299524548417f3e947cbd3d47f68
-    #commit: bcd94f5cc0c4e919cbda3bb43dde482cac56dd51
-  extra-dep: true
-extra-deps: []
-
 flags:
   haskeline:
     brick: true
-
 extra-package-dbs: []
-
+packages:
+- '.'
+- ../PL
+- ../PLGrammar
+- ../PLParser
+- ../PLPrinter
+- ../PLEditor
+- location:
+    git: https://github.com/rootmos/haskeline.git
+    commit: bf8164bc747e299524548417f3e947cbd3d47f68
+  extra-dep: true
+extra-deps:
+- haskeline-0.7.4.0
+- megaparsec-6.4.0
+- parser-combinators-0.4.0
+resolver: lts-9.18

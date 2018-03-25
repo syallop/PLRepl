@@ -15,17 +15,20 @@ executable pl
                      , transformers
                      , mtl
                      , text
-                     , haskeline
                      , directory
+                     , containers
                      , brick
                      , vty
                      , PL
                      , PLPrinter
+                     , PLParser
+                     , PLGrammar
                      , PLEditor
 
   other-modules:       PLRepl.Event
                      , PLRepl.Name
                      , PLRepl.State
+                     , PLRepl.Repl
                      , PLRepl.Editor
                      , PLRepl.Editor.Event
                      , PLRepl.Editor.State

@@ -9,9 +9,9 @@ module Main where
 import PLRepl.Event as PL
 import PLRepl.Name as PL
 import PLRepl.State as PL
+import PLRepl.Repl as PL
 
 import PL.Grammar.Lispy
-import PL.Repl
 import PL.TyVar
 import PL.Type
 import PL.Var
@@ -23,10 +23,7 @@ import Brick.Widgets.Border
 import Brick.Widgets.Border.Style
 import Brick.Widgets.Center
 import Graphics.Vty as Vty
-import System.Console.Haskeline
-import System.Console.Haskeline.Completion
 import qualified Brick as Brick
-import qualified System.Console.Haskeline.Brick as HL
 
 import Control.Concurrent (threadDelay, forkIO, forkFinally)
 import Control.Monad
@@ -73,28 +70,28 @@ handleEvent
   -> PL.State PL.Name
   -> BrickEvent PL.Name (PL.Event PL.Name)
   -> EventM PL.Name (Next (PL.State PL.Name))
-handleEvent chan (st@(PL.State replCtx editorSt outputSt typeCtxSt focus)) ev = case ev of
+handleEvent chan (st@(PL.State replState editorSt outputSt typeCtxSt focus)) ev = case ev of
   -- an event from our application
   AppEvent appEv -> case appEv of
     -- Replctx must be updated
-    PL.ReplaceReplCtx replCtx'
-      -> continue (PL.State replCtx' editorSt outputSt typeCtxSt focus)
+    PL.ReplaceReplState replState'
+      -> continue (PL.State replState' editorSt outputSt typeCtxSt focus)
 
     -- An event to the editor
     PL.EditorEv editorEv
       -> do editorSt' <- handleEditorEvent editorEv editorSt
-            continue (PL.State replCtx editorSt' outputSt typeCtxSt focus)
+            continue (PL.State replState editorSt' outputSt typeCtxSt focus)
 
     PL.OutputEv outputEv
       -> do outputSt' <- handleOutputEvent outputEv outputSt
-            continue (PL.State replCtx editorSt outputSt' typeCtxSt focus)
+            continue (PL.State replState editorSt outputSt' typeCtxSt focus)
 
     PL.TypeCtxEv typeCtxEv
       -> do typeCtxSt' <- handleTypeCtxEvent typeCtxEv typeCtxSt
-            continue (PL.State replCtx editorSt outputSt typeCtxSt' focus)
+            continue (PL.State replState editorSt outputSt typeCtxSt' focus)
 
     PL.FocusOn n
-      -> continue (PL.State replCtx editorSt outputSt typeCtxSt n)
+      -> continue (PL.State replState editorSt outputSt typeCtxSt n)
 
   -- A virtual terminal event
   VtyEvent vtyEv -> case vtyEv of
@@ -144,7 +141,7 @@ handleEvent chan (st@(PL.State replCtx editorSt outputSt typeCtxSt focus)) ev = 
               let ?eb             = var
                   ?abs            = typ tyVar
                   ?tb             = tyVar
-              let (replCtx',eRes) = (\r -> _unRepl r replCtx) . replStep var (typ tyVar) tyVar . editorText $ editorSt
+              let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep var (typ tyVar) tyVar . editorText $ editorSt
               case eRes of
                 -- Some repl error
                 Left err
@@ -154,19 +151,19 @@ handleEvent chan (st@(PL.State replCtx editorSt outputSt typeCtxSt focus)) ev = 
                   --   re-detecting the newlines.
                   -- - The printer should be passed the current width so it
                   --   wraps optimally.
-                  -> continue (PL.State replCtx
+                  -> continue (PL.State replState
                                         editorSt
                                         (newOutputState $ Text.lines $ renderDocument err)
-                                        (newTypeCtxState $ Text.lines $ renderDocument $ _typeCtx $ replCtx)
+                                        (newTypeCtxState $ Text.lines $ renderDocument $ _typeCtx $ replState)
                                         (Just OutputCursor))
 
                 -- A successful parse
                 Right a
-                  -> do liftIO (writeBChan chan . ReplaceReplCtx $ replCtx')
-                        continue (PL.State replCtx'
+                  -> do liftIO (writeBChan chan . ReplaceReplState $ replState')
+                        continue (PL.State replState'
                                            emptyEditorState
                                            (newOutputState $ Text.lines $ renderDocument a)
-                                           (newTypeCtxState $ Text.lines $ renderDocument $ _typeCtx $ replCtx')
+                                           (newTypeCtxState $ Text.lines $ renderDocument $ _typeCtx $ replState')
                                            (Just EditorCursor))
 
       Vty.KPageUp
