@@ -72,28 +72,28 @@ handleEvent
   -> PL.State PL.Name
   -> BrickEvent PL.Name (PL.Event PL.Name)
   -> EventM PL.Name (Next (PL.State PL.Name))
-handleEvent chan (st@(PL.State someReplState editorSt outputSt typeCtxSt focus)) ev = case ev of
+handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeCtxSt focus)) ev = case ev of
   -- an event from our application
   AppEvent appEv -> case appEv of
     -- Replctx must be updated
     PL.ReplaceReplState someReplState'
-      -> continue (PL.State someReplState' editorSt outputSt typeCtxSt focus)
+      -> continue (PL.State someReplState' replConfigs editorSt outputSt typeCtxSt focus)
 
     -- An event to the editor
     PL.EditorEv editorEv
       -> do editorSt' <- handleEditorEvent editorEv editorSt
-            continue (PL.State someReplState editorSt' outputSt typeCtxSt focus)
+            continue (PL.State someReplState replConfigs editorSt' outputSt typeCtxSt focus)
 
     PL.OutputEv outputEv
       -> do outputSt' <- handleOutputEvent outputEv outputSt
-            continue (PL.State someReplState editorSt outputSt' typeCtxSt focus)
+            continue (PL.State someReplState replConfigs editorSt outputSt' typeCtxSt focus)
 
     PL.TypeCtxEv typeCtxEv
       -> do typeCtxSt' <- handleTypeCtxEvent typeCtxEv typeCtxSt
-            continue (PL.State someReplState editorSt outputSt typeCtxSt' focus)
+            continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt' focus)
 
     PL.FocusOn n
-      -> continue (PL.State someReplState editorSt outputSt typeCtxSt n)
+      -> continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt n)
 
   -- A virtual terminal event
   VtyEvent vtyEv -> case vtyEv of
@@ -156,6 +156,7 @@ handleEvent chan (st@(PL.State someReplState editorSt outputSt typeCtxSt focus))
                   -- - The printer should be passed the current width so it
                   --   wraps optimally.
                   -> continue (PL.State someReplState
+                                        replConfigs
                                         editorSt
                                         (newOutputState $ Text.lines $ renderDocument err)
                                         (case someReplState of
@@ -168,6 +169,7 @@ handleEvent chan (st@(PL.State someReplState editorSt outputSt typeCtxSt focus))
                 Right a
                   -> do liftIO (writeBChan chan . ReplaceReplState $ someReplState')
                         continue (PL.State someReplState'
+                                           replConfigs
                                            emptyEditorState
                                            (newOutputState $ Text.lines $ renderDocument a)
                                            (case someReplState' of

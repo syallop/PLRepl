@@ -28,6 +28,7 @@ module PLRepl.Repl
   , replEvalSimple
 
   , SomeReplState (..)
+  , SomeReplConfig (..)
   )
   where
 
@@ -92,6 +93,9 @@ data ReplConfig b abs tb o where
        }
     -> ReplConfig b abs tb o
 
+-- SomeReplConfig is a ReplConfig where the type of Grammar has been forgotten.
+data SomeReplConfig b abs tb = forall o. Document o => SomeReplConfig (ReplConfig b abs tb o)
+
 -- The empty ReplConfig always fails and outputs error documents for Read Eval
 -- and Print.
 emptyReplConfig
@@ -115,6 +119,7 @@ data ReplState b abs tb o = ReplState
   , _typeCtx      :: TypeCtx tb      -- Names can be given to types
   }
 
+-- SomeReplState is a ReplState where the type of Grammar has been forgotten.
 data SomeReplState b abs tb = forall o. Document o => SomeReplState (ReplState b abs tb o)
 
 instance
