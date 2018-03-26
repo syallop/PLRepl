@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module PLRepl.Widgets.Editor.State
   ( EditorState (..)
   , emptyEditorState
@@ -31,5 +32,5 @@ editorText
   :: EditorState
   -> Text.Text
 editorText (EditorState editor _view) =
-  Text.unlines . map E.lineText . E.renderLines . E.editorLines $ editor
+  Text.intercalate "\n" . map E.lineText . E.renderLines . E.editorLines $ editor
 
