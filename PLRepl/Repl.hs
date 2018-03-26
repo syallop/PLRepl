@@ -26,6 +26,8 @@ module PLRepl.Repl
   , replTypeCheck
   , replReduce
   , replEvalSimple
+
+  , SomeReplState (..)
   )
   where
 
@@ -112,6 +114,8 @@ data ReplState b abs tb o = ReplState
 
   , _typeCtx      :: TypeCtx tb      -- Names can be given to types
   }
+
+data SomeReplState b abs tb = forall o. Document o => SomeReplState (ReplState b abs tb o)
 
 instance
   ( Document b

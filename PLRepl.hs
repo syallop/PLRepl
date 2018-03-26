@@ -27,6 +27,7 @@ import Graphics.Vty as Vty
 import qualified Brick as Brick
 
 import Control.Concurrent (threadDelay, forkIO, forkFinally)
+import Control.Arrow (first)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.State.Lazy
@@ -71,28 +72,28 @@ handleEvent
   -> PL.State PL.Name
   -> BrickEvent PL.Name (PL.Event PL.Name)
   -> EventM PL.Name (Next (PL.State PL.Name))
-handleEvent chan (st@(PL.State replState editorSt outputSt typeCtxSt focus)) ev = case ev of
+handleEvent chan (st@(PL.State someReplState editorSt outputSt typeCtxSt focus)) ev = case ev of
   -- an event from our application
   AppEvent appEv -> case appEv of
     -- Replctx must be updated
-    PL.ReplaceReplState replState'
-      -> continue (PL.State replState' editorSt outputSt typeCtxSt focus)
+    PL.ReplaceReplState someReplState'
+      -> continue (PL.State someReplState' editorSt outputSt typeCtxSt focus)
 
     -- An event to the editor
     PL.EditorEv editorEv
       -> do editorSt' <- handleEditorEvent editorEv editorSt
-            continue (PL.State replState editorSt' outputSt typeCtxSt focus)
+            continue (PL.State someReplState editorSt' outputSt typeCtxSt focus)
 
     PL.OutputEv outputEv
       -> do outputSt' <- handleOutputEvent outputEv outputSt
-            continue (PL.State replState editorSt outputSt' typeCtxSt focus)
+            continue (PL.State someReplState editorSt outputSt' typeCtxSt focus)
 
     PL.TypeCtxEv typeCtxEv
       -> do typeCtxSt' <- handleTypeCtxEvent typeCtxEv typeCtxSt
-            continue (PL.State replState editorSt outputSt typeCtxSt' focus)
+            continue (PL.State someReplState editorSt outputSt typeCtxSt' focus)
 
     PL.FocusOn n
-      -> continue (PL.State replState editorSt outputSt typeCtxSt n)
+      -> continue (PL.State someReplState editorSt outputSt typeCtxSt n)
 
   -- A virtual terminal event
   VtyEvent vtyEv -> case vtyEv of
@@ -142,9 +143,9 @@ handleEvent chan (st@(PL.State replState editorSt outputSt typeCtxSt focus)) ev 
               let ?eb             = var
                   ?abs            = typ tyVar
                   ?tb             = tyVar
-              {-let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep plGrammarParser var (typ tyVar) tyVar . editorText $ editorSt-}
-              {-let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep megaparsecGrammarParser var (typ tyVar) tyVar . editorText $ editorSt-}
-              let (replState',eRes) = (\r -> _unRepl r replState) . PL.replStep . editorText $ editorSt
+              let (someReplState',eRes) = case someReplState of
+                                            SomeReplState replState
+                                              -> first SomeReplState . (`_unRepl` replState) . PL.replStep . editorText $ editorSt
               case eRes of
                 -- Some repl error
                 Left err
@@ -154,19 +155,25 @@ handleEvent chan (st@(PL.State replState editorSt outputSt typeCtxSt focus)) ev 
                   --   re-detecting the newlines.
                   -- - The printer should be passed the current width so it
                   --   wraps optimally.
-                  -> continue (PL.State replState
+                  -> continue (PL.State someReplState
                                         editorSt
                                         (newOutputState $ Text.lines $ renderDocument err)
-                                        (newTypeCtxState $ Text.lines $ renderDocument $ _typeCtx $ replState)
+                                        (case someReplState of
+                                           SomeReplState replState
+                                             -> newTypeCtxState . Text.lines . renderDocument . _typeCtx $ replState
+                                        )
                                         (Just OutputCursor))
 
                 -- A successful parse
                 Right a
-                  -> do liftIO (writeBChan chan . ReplaceReplState $ replState')
-                        continue (PL.State replState'
+                  -> do liftIO (writeBChan chan . ReplaceReplState $ someReplState')
+                        continue (PL.State someReplState'
                                            emptyEditorState
                                            (newOutputState $ Text.lines $ renderDocument a)
-                                           (newTypeCtxState $ Text.lines $ renderDocument $ _typeCtx $ replState')
+                                           (case someReplState' of
+                                              SomeReplState replState'
+                                                -> newTypeCtxState . Text.lines . renderDocument . _typeCtx $ replState'
+                                           )
                                            (Just EditorCursor))
 
       Vty.KPageUp
