@@ -8,6 +8,7 @@
 -- A PLRepl.Repl for entire lispy expressions.
 module PLRepl.Repl.Lispy
   ( lispyExprReplConfig
+  , lispyTypeReplConfig
   , plGrammarParser
   , megaparsecGrammarParser
   )
@@ -65,6 +66,35 @@ lispyExprReplConfig grammarParser b abs tb = ReplConfig
   , _read        = grammarParser     -- Supplied read function
   , _eval        = replEvalSimple    -- Use default eval function
   , _print       = printerF b abs tb -- aand a printer we define on the supplied sub-grammars.
+  }
+
+lispyTypeReplConfig
+  :: ( Show b
+     , Show abs
+     , Show tb
+     , Ord tb
+     , Eq b
+     , Eq abs
+     , Binds b (Type tb)
+     , Binds tb Kind
+     , Abstracts abs tb
+     , Document b
+     , Document abs
+     , Document tb
+     )
+  => (forall o. Document o => Grammar o -> Text -> Repl b abs tb o o)
+  -> Grammar tb
+  -> ReplConfig b abs tb (Type tb)
+lispyTypeReplConfig grammarParser tb = ReplConfig
+  { _someGrammar = typ tb
+  , _read        = grammarParser
+  , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
+                                      -- expressions. We currently dont support defining new types.
+  , _print       = \parsedTy Nothing -> pure . render . mconcat $
+                     [ text "parsed type:"
+                     , lineBreak
+                     , fromMaybe mempty $ pprint (toPrinter (typ tb)) parsedTy
+                     ]
   }
 
 -- Convert a Grammar to a parser using PLParser.

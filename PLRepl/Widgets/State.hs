@@ -103,18 +103,25 @@ initialState initialFocus = State
     initialReplState :: SomeReplState Var (Type TyVar) TyVar
     initialReplState =
       let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx = emptyReplState
-       in SomeReplState $ ReplState lispyReplConfig exprBindCtx typeBindCtx typeBindings
+       in SomeReplState $ ReplState exprConfig
+                                    exprBindCtx
+                                    typeBindCtx
+                                    typeBindings
             $ fromJust $ insertType "Bool" (fixType $ SumT $ map fixType $ [ProductT [], ProductT []])
             $ fromJust $ insertType "Unit" (fixType $ SumT []) typeCtx
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
-    lispyReplConfig :: ReplConfig Var (Type TyVar) TyVar (Expr Var (Type TyVar) TyVar)
-    lispyReplConfig = lispyExprReplConfig megaparsecGrammarParser var (typ tyVar) tyVar
+    exprConfig = lispyExprReplConfig plGrammarParser var (typ tyVar) tyVar
+    {-exprConfig = lispyExprReplConfig megaparsecGrammarParser var (typ tyVar) tyVar-}
+
+    {-typeConfig = lispyTypeReplConfig plGrammarParser tyVar-}
+    typeConfig = lispyTypeReplConfig megaparsecGrammarParser tyVar
 
     initialReplConfigs :: Map GrammarName (SomeReplConfig Var (Type TyVar) TyVar)
     initialReplConfigs = Map.fromList
-      [ ("lispy", SomeReplConfig lispyReplConfig)
+      [ ("lispyExpr", SomeReplConfig exprConfig)
+      , ("lispyType", SomeReplConfig typeConfig)
       ]
 
 -- | What is the typeCtxState output given the current ReplState.
