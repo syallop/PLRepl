@@ -9,6 +9,7 @@
 module PLRepl.Repl.Lispy
   ( lispyExprReplConfig
   , lispyTypeReplConfig
+  , readOnlyConfig
   , plGrammarParser
   , megaparsecGrammarParser
   )
@@ -16,7 +17,7 @@ module PLRepl.Repl.Lispy
 
 import PL.Expr
 import PL.Grammar
-import PL.Grammar.Lispy
+import PLLispy
 import PLGrammar
 import PLPrinter
 import PLRepl.Repl
@@ -95,6 +96,19 @@ lispyTypeReplConfig grammarParser tb = ReplConfig
                      , lineBreak
                      , fromMaybe mempty $ pprint (toPrinter (typ tb)) parsedTy
                      ]
+  }
+
+-- | Read a Grammar with some Parser, report errors but otherwise do nothing.
+readOnlyConfig
+  :: Grammar o
+  -> (forall o. Document o => Grammar o -> Text -> Repl b abs tb o o)
+  -> ReplConfig b abs tb o
+readOnlyConfig grammar grammarParser = ReplConfig
+  { _someGrammar = grammar
+  , _read        = grammarParser
+  , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
+                                      -- expressions. We currently dont support defining new types.
+  , _print       = \parsedTy Nothing -> pure . render $ mempty
   }
 
 -- Convert a Grammar to a parser using PLParser.

@@ -2,6 +2,7 @@
     FlexibleContexts
   , OverloadedStrings
   , RankNTypes
+  , ImplicitParams
   #-}
 module PLRepl.Widgets.State
   ( State (..)
@@ -40,7 +41,9 @@ import PL.Type
 import PL.TypeCtx
 import PL.Var
 
-import PL.Grammar.Lispy
+import PLLispy
+
+import qualified PLGrammar as G
 
 import PLPrinter
 import qualified PLEditor as E
@@ -53,6 +56,12 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Data.Text (Text)
+import Data.Char
+
+import qualified Data.List.NonEmpty as NE
+import Data.List
+
+import Data.Monoid
 
 -- | A Name given to a Grammar.
 -- TODO:
@@ -88,6 +97,9 @@ data State n = State
   }
 
 -- | The initial state of the entire repl and sub-widgets.
+--
+-- This function is a particular mess and is currently being used to drive
+-- testing by switching out the repl config and trialing input.
 initialState :: Maybe n -> State n
 initialState initialFocus = State
   { _replState    = initialReplState
@@ -103,7 +115,8 @@ initialState initialFocus = State
     initialReplState :: SomeReplState Var (Type TyVar) TyVar
     initialReplState =
       let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx = emptyReplState
-       in SomeReplState $ ReplState exprConfig
+       {-in SomeReplState $ ReplState (exprConfig)-}
+       in SomeReplState $ ReplState (testReadOnlyConfig)
                                     exprBindCtx
                                     typeBindCtx
                                     typeBindings
@@ -118,6 +131,143 @@ initialState initialFocus = State
     {-typeConfig = lispyTypeReplConfig plGrammarParser tyVar-}
     typeConfig = lispyTypeReplConfig megaparsecGrammarParser tyVar
 
+    {-testReadOnlyConfig = readOnlyConfig testGrammar megaparsecGrammarParser-}
+    testReadOnlyConfig = readOnlyConfig testGrammar plGrammarParser
+      where
+        {-testGrammar = G.charIs 'a'-}
+        {-testGrammar = G.textIs "abc"-}
+
+        -- Consumes space and newline etc.
+        {-testGrammar = G.anyChar-}
+
+        {-testGrammar = G.charIs 'a' G.*/ G.charIs 'b'-}
+
+        {-testGrammar = G.charIs 'a' G.\* G.charIs 'b'-}
+
+        {-testGrammar = G.charIs 'a' G.*/ G.textIs "bc" G.\* G.charIs 'd'-}
+
+        -- Should succeed but fails.
+        -- Making text backtrack fixes this.
+        {-testGrammar = G.charIs 'a' G.\|/ G.charIs 'b'-}
+
+        -- Should succeed but fails.
+        {-testGrammar = G.textIs "a" G.\|/ G.textIs "b"-}
+
+        -- Works
+        {-testGrammar = G.charWhen isLower-}
+
+        -- Fails when left fails
+        -- - Adding try on LHS fixes
+        -- - Adding try to charWhen fixes. - Done
+        -- - Adding try to entire \$/ fixes.
+        {-testGrammar = G.charWhen isLower G.\|/ G.charWhen isUpper-}
+
+        -- Works
+        {-testGrammar = G.lambda-}
+
+        -- Works
+        {-testGrammar = G.lambda G.\|/ G.bigLambda-}
+
+        -- Works
+        {-testGrammar = name-}
+
+        -- Works
+        {-testGrammar = G.GPure ()-}
+
+        -- Works
+        {-testGrammar = G.GEmpty :: G.Grammar ()-}
+
+        -- Works
+        {-testGrammar = bind :: G.Grammar (MatchArg Var TyVar)-}
+
+        -- Works simply
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in matchSum :: G.Grammar (MatchArg Var TyVar)-}
+
+        -- Works but confuses me. Doesnt chain (like everything else right now).
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in matchProduct :: G.Grammar (MatchArg Var TyVar)-}
+
+       -- Works simply
+       {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in matchUnion :: G.Grammar (MatchArg Var TyVar)-}
+
+        -- Works
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in matchBinding var :: G.Grammar (MatchArg Var TyVar)-}
+
+        -- Works
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in matchArg :: G.Grammar (MatchArg Var TyVar)-}
+
+        -- Provisionally works if expr works
+        {-testGrammar =-}
+          {-let ?eb   = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in defaultOnly exprI-}
+
+        {-testGrammar = G.charIs 'a' G.\*/ G.charIs 'b'-}
+
+        -- Appears to work
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in caseBranch exprI-}
+
+        -- Appears to work
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in someCaseBranches exprI-}
+
+        -- Works. Lack of spaces allowed inside parens is a wart. As is the fact
+        -- they possibly must exist. Unsure.
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in caseBranches exprI-}
+
+        -- Appears to work
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in caseBody exprI-}
+
+        -- Appears to work
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in caseStatement exprI-}
+
+        -- Works.
+        testGrammar =
+          let ?eb  = var
+              ?abs = typ tyVar
+              ?tb  = tyVar
+           in caseAnalysis
+
+
     initialReplConfigs :: Map GrammarName (SomeReplConfig Var (Type TyVar) TyVar)
     initialReplConfigs = Map.fromList
       [ ("lispyExpr", SomeReplConfig exprConfig)
@@ -131,3 +281,9 @@ typeCtxStateGivenReplState
 typeCtxStateGivenReplState (SomeReplState replState) =
   newTypeCtxState . Text.lines . renderDocument . _typeCtx $ replState
 
+instance Document a => Document [a] where
+  document []     = mempty
+  document (a:as) = document a <> document as
+
+instance Document a => Document (NE.NonEmpty a) where
+  document as = document . NE.toList $ as

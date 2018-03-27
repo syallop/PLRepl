@@ -12,7 +12,7 @@ import PLRepl.Widgets.Event as PL
 import PLRepl.Widgets.Name as PL
 import PLRepl.Widgets.State as PL
 
-import PL.Grammar.Lispy
+import PLLispy
 import PL.TyVar
 import PL.Type
 import PL.Var

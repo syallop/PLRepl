@@ -25,6 +25,7 @@ executable pl
                      , PLParser
                      , PLGrammar
                      , PLEditor
+                     , PLLispy
 
   other-modules:       PLRepl.Widgets.Event
                      , PLRepl.Widgets.Name

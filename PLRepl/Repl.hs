@@ -40,7 +40,7 @@ import PL.Error
 import PL.Expr
 import PL.ExprLike
 import PL.Grammar
-import PL.Grammar.Lispy
+import PLLispy
 import PL.Kind
 import PL.Name
 import PL.Reduce
