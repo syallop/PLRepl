@@ -16,12 +16,10 @@ module PLRepl.Repl.Lispy
   where
 
 import PL.Expr
-import PL.Grammar
 import PLLispy
 import PLGrammar
 import PLPrinter
 import PLRepl.Repl
-import qualified PL.Grammar    as PL
 import qualified PL.Megaparsec as PLMega
 import qualified PLParser as PLParser
 import PL.Binds
@@ -118,7 +116,7 @@ plGrammarParser
   -> Text
   -> Repl b abs tb o o
 plGrammarParser grammar =
-  let plParser = PL.toParser grammar
+  let plParser = toParser grammar
    in \txt -> case PLParser.runParser plParser txt of
                 f@(PLParser.ParseFailure expected cursor)
                   -> replError . EMsg . document $ f

@@ -39,7 +39,6 @@ import PL.Case
 import PL.Error
 import PL.Expr
 import PL.ExprLike
-import PL.Grammar
 import PLLispy
 import PL.Kind
 import PL.Name
@@ -47,7 +46,6 @@ import PL.Reduce
 import PL.Type hiding (parens)
 import PL.Type.Eq
 import PL.TypeCtx
-import qualified PL.Grammar    as PL
 import qualified PL.Megaparsec as PLMega
 import qualified PLParser as PLParser
 
