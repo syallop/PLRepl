@@ -218,17 +218,23 @@ drawUI
   :: PL.State PL.Name
   -> [Widget PL.Name]
 drawUI st =
-  [ center $ border $ hLimit 200 $ vLimit 50 $ (editor <=> output) <+> sidebar
+  [ center $ border $ hLimit 200 $ vLimit 50 $ everything
   ]
   where
+    everything :: Widget PL.Name
+    everything = mainWidgets <+> sidebar
+
+    mainWidgets :: Widget PL.Name
+    mainWidgets = editor <=> output
+
     editor :: Widget PL.Name
-    editor = border $ viewport EditorViewport Vertical $ hLimit 60 $ vLimit 48 $ drawEditor EditorCursor (_editorState st)
+    editor = hLimit 160 $ border $ viewport EditorViewport Vertical $ vLimit 48 $ drawEditor EditorCursor (_editorState st)
 
     output :: Widget PL.Name
-    output  = border $ viewport OutputViewport Horizontal $ hLimit 160 $ vLimit 100 $ drawOutput OutputCursor (_outputState st)
+    output  = hLimit 160 $ border $ viewport OutputViewport Horizontal $ vLimit 100 $ drawOutput OutputCursor (_outputState st)
 
     sidebar :: Widget PL.Name
-    sidebar = border $ viewport TypeCtxViewport Horizontal $ hLimit 50 $ vLimit 20 $ drawTypeCtx TypeCtxCursor (_typeCtxState st)
+    sidebar = hLimit 40 $ border $ viewport TypeCtxViewport Horizontal $ vLimit 20 $ drawTypeCtx TypeCtxCursor (_typeCtxState st)
 
 main :: IO ()
 main = run

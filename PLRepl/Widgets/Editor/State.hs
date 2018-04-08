@@ -19,14 +19,21 @@ data EditorState = EditorState
   }
 
 emptyEditorState :: EditorState
-emptyEditorState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 20 $ E.widerView 80 $ E.emptyView)
+emptyEditorState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 20 $ E.widerView 100 $ E.emptyView)
 
 drawEditor
   :: n
   -> EditorState
   -> Widget n
 drawEditor editorCursor (EditorState editor view) =
-  (\(lines,pos) -> Brick.showCursor editorCursor (Location pos) . str . Text.unpack . Text.unlines . map E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
+  (\(lines,pos) -> Brick.showCursor editorCursor (Location pos) . str
+                                                                . Text.unpack
+                                                                . Text.unlines
+                                                                . map E.lineText
+                                                                . E.renderLines
+                                                                $ lines
+  ) . E.viewEditor view
+    $ editor
 
 editorText
   :: EditorState

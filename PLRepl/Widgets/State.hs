@@ -115,8 +115,8 @@ initialState initialFocus = State
     initialReplState :: SomeReplState Var (Type TyVar) TyVar
     initialReplState =
       let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx = emptyReplState
-       {-in SomeReplState $ ReplState (exprConfig)-}
-       in SomeReplState $ ReplState (testReadOnlyConfig)
+       in SomeReplState $ ReplState (exprConfig)
+       {-in SomeReplState $ ReplState (testReadOnlyConfig)-}
                                     exprBindCtx
                                     typeBindCtx
                                     typeBindings
@@ -128,12 +128,16 @@ initialState initialFocus = State
     exprConfig = lispyExprReplConfig plGrammarParser var (typ tyVar) tyVar
     {-exprConfig = lispyExprReplConfig megaparsecGrammarParser var (typ tyVar) tyVar-}
 
-    {-typeConfig = lispyTypeReplConfig plGrammarParser tyVar-}
-    typeConfig = lispyTypeReplConfig megaparsecGrammarParser tyVar
+    typeConfig = lispyTypeReplConfig plGrammarParser tyVar
+    {-typeConfig = lispyTypeReplConfig megaparsecGrammarParser tyVar-}
 
+    -- Read-only tests of grammars with our and mega parsec parser
     {-testReadOnlyConfig = readOnlyConfig testGrammar megaparsecGrammarParser-}
-    testReadOnlyConfig = readOnlyConfig testGrammar plGrammarParser
+    {-testReadOnlyConfig = readOnlyConfig testGrammar plGrammarParser-}
       where
+        -- TODO: Convert all these manual tests to PL/Test's implemented by
+        -- PLLispy, etc
+
         {-testGrammar = G.charIs 'a'-}
         {-testGrammar = G.textIs "abc"-}
 
@@ -261,11 +265,11 @@ initialState initialFocus = State
            {-in caseStatement exprI-}
 
         -- Works.
-        testGrammar =
-          let ?eb  = var
-              ?abs = typ tyVar
-              ?tb  = tyVar
-           in caseAnalysis
+        {-testGrammar =-}
+          {-let ?eb  = var-}
+              {-?abs = typ tyVar-}
+              {-?tb  = tyVar-}
+           {-in caseAnalysis-}
 
 
     initialReplConfigs :: Map GrammarName (SomeReplConfig Var (Type TyVar) TyVar)
