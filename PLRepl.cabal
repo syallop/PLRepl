@@ -27,6 +27,7 @@ executable pl
                      , PLEditor
                      , PLLispy
                      , PLLabel
+                     , Reversible
 
   other-modules:       PLRepl.Widgets.Event
                      , PLRepl.Widgets.Name

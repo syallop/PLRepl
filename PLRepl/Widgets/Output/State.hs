@@ -16,12 +16,18 @@ import qualified Data.Text as Text
 type OutputState = EditorState
 
 emptyOutputState :: OutputState
-emptyOutputState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 20 $ E.widerView 80 $ E.emptyView)
+emptyOutputState = EditorState
+  { _editor = E.makeEditor E.emptyLines
+  , _view   = E.tallerView 20 $ E.widerView 80 $ E.emptyView
+  }
 
 newOutputState
   :: [Text.Text]
   -> OutputState
-newOutputState lines = EditorState (E.makeEditor $ foldr E.prependLine E.emptyLines $ map E.textLine lines) (E.tallerView 30 $ E.widerView 80 $ E.emptyView)
+newOutputState lines = EditorState
+  { _editor = E.makeEditor $ foldr E.prependLine E.emptyLines $ map E.textLine lines
+  , _view   = E.tallerView 20 $ E.widerView 80 $ E.emptyView
+  }
 
 drawOutput
   :: n

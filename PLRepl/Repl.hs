@@ -52,6 +52,7 @@ import qualified PLParser as PLParser
 import PLParser
 import PLPrinter
 import PLGrammar
+import Reversible
 
 import Control.Applicative
 import Control.Monad (ap)
@@ -99,7 +100,7 @@ data SomeReplConfig b abs tb = forall o. Document o => SomeReplConfig (ReplConfi
 emptyReplConfig
   :: ReplConfig b abs tb o
 emptyReplConfig = ReplConfig
-  { _someGrammar = GEmpty -- The Grammar that always fails.
+  { _someGrammar = rempty -- The Grammar that always fails.
   , _read        = \_ _ -> replError $ EMsg $ text "No read function defined in replConfig"
   , _eval        = \_   -> replError $ EMsg $ text "No eval function defined in replConfig"
   , _print       = \_ _ -> replError $ EMsg $ text "No print function defined in replConfig"

@@ -11,6 +11,11 @@ packages:
 - ../PLEditor
 - ../PLLispy
 - ../PLLabel
+- ../Reversible
+- location:
+    git: https://github.com/syallop/DSL-Compose.git
+    commit: 8e49641f049c586e21c36c6982f51670082e1e3f
+  extra-dep: true
 - location:
     git: https://github.com/rootmos/haskeline.git
     commit: bf8164bc747e299524548417f3e947cbd3d47f68
