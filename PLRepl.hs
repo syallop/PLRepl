@@ -131,10 +131,14 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
     PL.FocusOn n
       -> continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt n)
 
-  -- A virtual terminal event
+  -- A virtual terminal event. Most events will be sent to whatever widget we
+  -- consider focused. Some may be global.
   VtyEvent vtyEv -> case vtyEv of
     -- A key with no modifiers
     Vty.EvKey keyEv modifiers -> case keyEv of
+
+      -- up arrow => cursor up
+      -- +ctrl    => taller view
       Vty.KUp -> case modifiers of
         []
           -> sendToFocused chan CursorUp focus >> continue st
@@ -142,6 +146,8 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
           -> sendToFocused chan (TallerView 1) focus >> continue st
         _ -> continue st
 
+      -- down arrow => cursor down
+      -- +ctrl      => shorter view
       Vty.KDown -> case modifiers of
         []
           -> sendToFocused chan CursorDown focus >> continue st
@@ -149,6 +155,8 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
           -> sendToFocused chan (TallerView (-1)) focus >> continue st
         _ -> continue st
 
+      -- left arrow => cursor left
+      -- +ctrl      => narrower view
       Vty.KLeft -> case modifiers of
         []
           -> sendToFocused chan CursorLeft focus >> continue st
@@ -156,6 +164,8 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
           -> sendToFocused chan (WiderView (-1)) focus >> continue st
         _ -> continue st
 
+      -- right arrow => cursor right
+      -- +ctrl       => wider view
       Vty.KRight -> case modifiers of
         []
           -> sendToFocused chan CursorRight focus >> continue st
@@ -163,17 +173,29 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
           -> sendToFocused chan (WiderView 1) focus >> continue st
         _ -> continue st
 
+      -- any character => insert that character in the editor.
+      -- TODO: Should this still happen when another widget has focus?
       Vty.KChar c
         -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
 
+      -- delete => delete a character in the editor.
+      -- TODO: Should this still happen when another widget has focus?
       Vty.KDel
         -> liftIO (writeBChan chan . EditorEv $ DeleteChar) >> continue st
 
+      -- enter => insert a newline in the editor.
+      -- TODO: Should this still happen when another widget has focus?
       Vty.KEnter -> case modifiers of
         []
           -> liftIO (writeBChan chan . EditorEv $ NewLine) >> continue st
         _ -> continue st
 
+      -- insert => grab the text in the editor and run it through the configured
+      -- repl.
+      --   - on failure => render the error in the output widget and switch
+      --     focus there.
+      --   - on success => render the parse in the output widget and switch
+      --     focus to the editor.
       Vty.KIns
         -> do let txt             = editorText editorSt
               let ?eb             = var
@@ -181,7 +203,7 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                   ?tb             = tyVar
               let (someReplState',eRes) = case someReplState of
                                             SomeReplState replState
-                                              -> first SomeReplState . (`_unRepl` replState) . PL.replStep . editorText $ editorSt
+                                              -> first SomeReplState . (`_unRepl` replState) . PL.replStep $ txt
               case eRes of
                 -- Some repl error
                 Left err
@@ -214,12 +236,15 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                                            )
                                            (Just EditorCursor))
 
+      -- page-up => switch focus to the next widget.
       Vty.KPageUp
         -> liftIO (writeBChan chan $ FocusOn $ fmap nextFocus $ focus) >> continue st
 
+      -- page-down => switch focus to the previous widget.
       Vty.KPageDown
         -> liftIO (writeBChan chan . FocusOn . fmap previousFocus $ focus) >> continue st
 
+      -- escape => exit the program.
       Vty.KEsc
         -> liftIO $ exitSuccess
 
