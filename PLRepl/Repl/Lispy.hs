@@ -5,7 +5,15 @@
   , FlexibleContexts
   , OverloadedStrings
   #-}
--- A PLRepl.Repl for entire lispy expressions.
+{-|
+Module      : PLRepl.Repl
+Copyright   : (c) Samuel A. Yallop, 2018
+Maintainer  : syallop@gmail.com
+Stability   : experimental
+
+A PLRepl.Repl for lispy-style grammars.
+
+|-}
 module PLRepl.Repl.Lispy
   ( lispyExprReplConfig
   , lispyTypeReplConfig
@@ -169,6 +177,7 @@ printerF b abs tb parsed mEval =
       typePrinter = toPrinter $ typ tb
    in pure . render . mconcat $
         [ text "parsed input:"
+        , lineBreak
         , lineBreak
         , fromMaybe mempty $ pprint exprPrinter parsed
         ]

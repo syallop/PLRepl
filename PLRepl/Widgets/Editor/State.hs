@@ -18,9 +18,14 @@ data EditorState = EditorState
   , _view   :: E.View
   }
 
+-- | The state an editor begins in.
 emptyEditorState :: EditorState
-emptyEditorState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 20 $ E.widerView 100 $ E.emptyView)
+emptyEditorState = EditorState
+  { _editor = E.makeEditor E.emptyLines                       -- The initial editors lines are empty
+  , _view   = E.tallerView 20 . E.widerView 100 $ E.emptyView -- Give the initial view some size.
+  }
 
+-- | Draw editor state as a widget with a cursor 'n'.
 drawEditor
   :: n
   -> EditorState
@@ -35,6 +40,8 @@ drawEditor editorCursor (EditorState editor view) =
   ) . E.viewEditor view
     $ editor
 
+-- | Get the text contained in an editor by intercalating a newline between each
+-- line.
 editorText
   :: EditorState
   -> Text.Text

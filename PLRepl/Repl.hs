@@ -5,6 +5,21 @@
   , OverloadedStrings
   , UndecidableInstances
   #-}
+{-|
+Module      : PLRepl.Repl
+Copyright   : (c) Samuel A. Yallop, 2018
+Maintainer  : syallop@gmail.com
+Stability   : experimental
+
+PLRepl.Repl abstracts the Read Eval Print Loop for some PL repl.
+It accepts a repl configuration which it understands how to drive.
+
+Repl configuration(s) are found under PLRepl.Repl.* This abstraction allows
+defining multiple repls which can be switched between, for example we might
+want a repl for different expression grammars or a repl exclusively for type
+signatures.
+
+|-}
 module PLRepl.Repl
   ( Read
   , Eval

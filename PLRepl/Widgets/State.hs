@@ -116,7 +116,6 @@ initialState initialFocus = State
     initialReplState =
       let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx = emptyReplState
        in SomeReplState $ ReplState (exprConfig)
-       {-in SomeReplState $ ReplState (testReadOnlyConfig)-}
                                     exprBindCtx
                                     typeBindCtx
                                     typeBindings
@@ -126,152 +125,9 @@ initialState initialFocus = State
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
     exprConfig = lispyExprReplConfig plGrammarParser var (typ tyVar) tyVar
-    {-exprConfig = lispyExprReplConfig megaparsecGrammarParser var (typ tyVar) tyVar-}
-
     typeConfig = lispyTypeReplConfig plGrammarParser tyVar
-    {-typeConfig = lispyTypeReplConfig megaparsecGrammarParser tyVar-}
 
-    -- Read-only tests of grammars with our and mega parsec parser
-    {-testReadOnlyConfig = readOnlyConfig testGrammar megaparsecGrammarParser-}
-    {-testReadOnlyConfig = readOnlyConfig testGrammar plGrammarParser-}
       where
-        -- TODO: Convert all these manual tests to PL/Test's implemented by
-        -- PLLispy, etc
-
-        {-testGrammar = G.charIs 'a'-}
-        {-testGrammar = G.textIs "abc"-}
-
-        -- Consumes space and newline etc.
-        {-testGrammar = G.anyChar-}
-
-        {-testGrammar = G.charIs 'a' G.*/ G.charIs 'b'-}
-
-        {-testGrammar = G.charIs 'a' G.\* G.charIs 'b'-}
-
-        {-testGrammar = G.charIs 'a' G.*/ G.textIs "bc" G.\* G.charIs 'd'-}
-
-        -- Should succeed but fails.
-        -- Making text backtrack fixes this.
-        {-testGrammar = G.charIs 'a' G.\|/ G.charIs 'b'-}
-
-        -- Should succeed but fails.
-        {-testGrammar = G.textIs "a" G.\|/ G.textIs "b"-}
-
-        -- Works
-        {-testGrammar = G.charWhen isLower-}
-
-        -- Fails when left fails
-        -- - Adding try on LHS fixes
-        -- - Adding try to charWhen fixes. - Done
-        -- - Adding try to entire \$/ fixes.
-        {-testGrammar = G.charWhen isLower G.\|/ G.charWhen isUpper-}
-
-        -- Works
-        {-testGrammar = G.lambda-}
-
-        -- Works
-        {-testGrammar = G.lambda G.\|/ G.bigLambda-}
-
-        -- Works
-        {-testGrammar = name-}
-
-        -- Works
-        {-testGrammar = G.GPure ()-}
-
-        -- Works
-        {-testGrammar = G.GEmpty :: G.Grammar ()-}
-
-        -- Works
-        {-testGrammar = bind :: G.Grammar (MatchArg Var TyVar)-}
-
-        -- Works simply
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in matchSum :: G.Grammar (MatchArg Var TyVar)-}
-
-        -- Works but confuses me. Doesnt chain (like everything else right now).
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in matchProduct :: G.Grammar (MatchArg Var TyVar)-}
-
-       -- Works simply
-       {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in matchUnion :: G.Grammar (MatchArg Var TyVar)-}
-
-        -- Works
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in matchBinding var :: G.Grammar (MatchArg Var TyVar)-}
-
-        -- Works
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in matchArg :: G.Grammar (MatchArg Var TyVar)-}
-
-        -- Provisionally works if expr works
-        {-testGrammar =-}
-          {-let ?eb   = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in defaultOnly exprI-}
-
-        {-testGrammar = G.charIs 'a' G.\*/ G.charIs 'b'-}
-
-        -- Appears to work
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in caseBranch exprI-}
-
-        -- Appears to work
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in someCaseBranches exprI-}
-
-        -- Works. Lack of spaces allowed inside parens is a wart. As is the fact
-        -- they possibly must exist. Unsure.
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in caseBranches exprI-}
-
-        -- Appears to work
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in caseBody exprI-}
-
-        -- Appears to work
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in caseStatement exprI-}
-
-        -- Works.
-        {-testGrammar =-}
-          {-let ?eb  = var-}
-              {-?abs = typ tyVar-}
-              {-?tb  = tyVar-}
-           {-in caseAnalysis-}
-
-
     initialReplConfigs :: Map GrammarName (SomeReplConfig Var (Type TyVar) TyVar)
     initialReplConfigs = Map.fromList
       [ ("lispyExpr", SomeReplConfig exprConfig)

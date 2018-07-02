@@ -42,6 +42,7 @@ nextFocus n = case n of
   TypeCtxCursor
     -> EditorCursor
 
+-- | Manually map a 'focusable' name to the previous.
 previousFocus
   :: Name
   -> Name

@@ -11,15 +11,15 @@ import Brick
 
 -- | An event which may be sent to the Editor widget.
 data EditorEvent
-  = CursorLeft
-  | CursorRight
-  | CursorUp
-  | CursorDown
-  | DeleteChar
-  | InsertChar Char
-  | NewLine
-  | WiderView Int
-  | TallerView Int
+  = CursorLeft      -- ^ Move the cursor left
+  | CursorRight     -- ^ Move the cursor right
+  | CursorUp        -- ^ Move the cursor up
+  | CursorDown      -- ^ Move the cursor down
+  | DeleteChar      -- ^ Delete a character at the cursor
+  | InsertChar Char -- ^ Insert a character at the cursor
+  | NewLine         -- ^ Insert a newline
+  | WiderView Int   -- ^ Widen (or contract) the width of the viewport
+  | TallerView Int  -- ^ Tallen (or shorten) the height of the viewport
 
 -- | Handle editor specific events.
 handleEditorEvent
