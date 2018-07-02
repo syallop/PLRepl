@@ -92,9 +92,9 @@ type Read b abs tb o = Document o => Grammar o -> Text -> Repl b abs tb o o
 -- A return value of Nothing is still a success, just with no new expression.
 type Eval b abs tb o = o -> Repl b abs tb o (Maybe (Expr b abs tb,Type tb))
 
--- | A Print function takes a parsed thing 'o', a possible expression and type
+-- | A Print function takes the initial text, the parsed thing 'o', a possible expression and type
 -- it reduced to and returns some output Text to print.
-type Print b abs tb o = Document o => o -> Maybe (Expr b abs tb, Type tb) -> Repl b abs tb o Doc
+type Print b abs tb o = Document o => Text -> o -> Maybe (Expr b abs tb, Type tb) -> Repl b abs tb o Doc
 
 -- | A ReplConfig is a set of active Grammar alongside Read, Eval and Print
 -- functions defined upon it.
@@ -110,7 +110,7 @@ data ReplConfig b abs tb o where
 -- SomeReplConfig is a ReplConfig where the type of Grammar has been forgotten.
 data SomeReplConfig b abs tb = forall o. Document o => SomeReplConfig (ReplConfig b abs tb o)
 
--- The empty ReplConfig always fails and outputs error documents for Read Eval
+-- | The empty ReplConfig always fails and outputs error documents for Read Eval
 -- and Print.
 emptyReplConfig
   :: ReplConfig b abs tb o
@@ -118,7 +118,7 @@ emptyReplConfig = ReplConfig
   { _someGrammar = rempty -- The Grammar that always fails.
   , _read        = \_ _ -> replError $ EMsg $ text "No read function defined in replConfig"
   , _eval        = \_   -> replError $ EMsg $ text "No eval function defined in replConfig"
-  , _print       = \_ _ -> replError $ EMsg $ text "No print function defined in replConfig"
+  , _print       = \_ _ _ -> replError $ EMsg $ text "No print function defined in replConfig"
   }
 
 -- | The current st of the repl is a consistent view of type and expression bindings.
@@ -271,21 +271,17 @@ replRead input = Repl $ \replState ->
     in replF replState
 
 replEval
-  :: o -- The thing to evaluate
-  -> Repl b abs tb o (Maybe (Expr b abs tb,Type tb))
+  :: Eval b abs tb o
 replEval a = Repl $ \replState ->
   let evalF = _eval . _replConfig $ replState
       Repl replF = evalF a
    in replF replState
 
 replPrint
-  :: Document o
-  => o
-  -> Maybe (Expr b abs tb, Type tb)
-  -> Repl b abs tb o Doc
-replPrint a mEvaluated = Repl $ \replState ->
+  :: Print b abs tb o
+replPrint originalTxt a mEvaluated = Repl $ \replState ->
   let printF = _print . _replConfig $ replState
-      Repl replF = printF a mEvaluated
+      Repl replF = printF originalTxt a mEvaluated
    in replF replState
 
 -- Read, Eval and return the text to be printed.
@@ -298,5 +294,5 @@ replStep
 replStep input = do
   parsedOutput <- replRead input
   mEvaluated   <- replEval parsedOutput
-  replPrint parsedOutput mEvaluated
+  replPrint input parsedOutput mEvaluated
 

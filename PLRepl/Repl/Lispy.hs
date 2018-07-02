@@ -97,7 +97,7 @@ lispyTypeReplConfig grammarParser tb = ReplConfig
   , _read        = grammarParser
   , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
                                       -- expressions. We currently dont support defining new types.
-  , _print       = \parsedTy Nothing -> pure . mconcat $
+  , _print       = \_inputTxt parsedTy Nothing -> pure . mconcat $
                      [ text "parsed type:"
                      , lineBreak
                      , fromMaybe mempty $ pprint (toPrinter (typ tb)) parsedTy
@@ -114,7 +114,7 @@ readOnlyConfig grammar grammarParser = ReplConfig
   , _read        = grammarParser
   , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
                                       -- expressions. We currently dont support defining new types.
-  , _print       = \parsedTy Nothing -> pure $ mempty
+  , _print       = \inputTxt parsedTy Nothing -> pure mempty
   }
 
 -- Convert a Grammar to a parser using PLParser.
@@ -172,7 +172,7 @@ printerF
   -> Grammar abs
   -> Grammar tb
   -> Print b abs tb (Expr b abs tb)
-printerF b abs tb parsed mEval =
+printerF b abs tb inputTxt parsed mEval =
   let -- A printer for expressions.
       exprPrinter = toPrinter $ expr b abs tb
 
@@ -180,7 +180,12 @@ printerF b abs tb parsed mEval =
       typePrinter = toPrinter $ typ tb
 
    in pure . mconcat $
-        [ text "parsed input:"
+        [ text "read text:"
+        , lineBreak
+        , text inputTxt -- TODO: Raw text?
+        , lineBreak, lineBreak
+
+        , text "parsed input:"
         , lineBreak
         , indent 1 $ fromMaybe mempty $ pprint exprPrinter parsed
         , lineBreak, lineBreak
