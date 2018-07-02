@@ -12,22 +12,24 @@ executable pl
   main-is:             PLRepl.hs
 
   build-depends:       base >=4.7
-                     , transformers
+
+                     , PL         >= 0.1
+                     , PLEditor   >= 0.1
+                     , PLGrammar  >= 0.4
+                     , PLLabel    >= 0.1
+                     , PLLispy    >= 0.2
+                     , PLParser   >= 0.1
+                     , PLPrinter  >= 0.3
+                     , Reversible >= 0.1
+
+                     , brick
+                     , containers
+                     , directory
+                     , megaparsec
                      , mtl
                      , text
-                     , directory
-                     , containers
-                     , megaparsec
-                     , brick
+                     , transformers
                      , vty
-                     , PL
-                     , PLPrinter
-                     , PLParser
-                     , PLGrammar
-                     , PLEditor
-                     , PLLispy
-                     , PLLabel
-                     , Reversible
 
   other-modules:       PLRepl.Widgets.Event
                      , PLRepl.Widgets.Name
