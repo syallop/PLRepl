@@ -97,7 +97,7 @@ lispyTypeReplConfig grammarParser tb = ReplConfig
   , _read        = grammarParser
   , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
                                       -- expressions. We currently dont support defining new types.
-  , _print       = \parsedTy Nothing -> pure . render . mconcat $
+  , _print       = \parsedTy Nothing -> pure . mconcat $
                      [ text "parsed type:"
                      , lineBreak
                      , fromMaybe mempty $ pprint (toPrinter (typ tb)) parsedTy
@@ -114,7 +114,7 @@ readOnlyConfig grammar grammarParser = ReplConfig
   , _read        = grammarParser
   , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
                                       -- expressions. We currently dont support defining new types.
-  , _print       = \parsedTy Nothing -> pure . render $ mempty
+  , _print       = \parsedTy Nothing -> pure $ mempty
   }
 
 -- Convert a Grammar to a parser using PLParser.
@@ -173,13 +173,17 @@ printerF
   -> Grammar tb
   -> Print b abs tb (Expr b abs tb)
 printerF b abs tb parsed mEval =
-  let exprPrinter = toPrinter $ expr b abs tb
+  let -- A printer for expressions.
+      exprPrinter = toPrinter $ expr b abs tb
+
+      -- A printer for types.
       typePrinter = toPrinter $ typ tb
-   in pure . render . mconcat $
+
+   in pure . mconcat $
         [ text "parsed input:"
         , lineBreak
-        , lineBreak
-        , fromMaybe mempty $ pprint exprPrinter parsed
+        , indent 1 $ fromMaybe mempty $ pprint exprPrinter parsed
+        , lineBreak, lineBreak
         ]
         ++
         case mEval of
@@ -187,16 +191,14 @@ printerF b abs tb parsed mEval =
             -> []
 
           Just (redExpr, ty)
-            -> [ text "which evaluates to: "
+            -> [ text "which reduces to: "
                , lineBreak
-
-               , fromMaybe mempty $ pprint exprPrinter redExpr
-               , lineBreak
+               , indent 1 $ fromMaybe mempty $ pprint exprPrinter redExpr
+               , lineBreak, lineBreak
 
                , text "with type:"
                , lineBreak
-
-               , fromMaybe mempty $ pprint typePrinter ty
+               , indent 1 $ fromMaybe mempty $ pprint typePrinter ty
                , lineBreak
                ]
 

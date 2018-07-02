@@ -94,7 +94,7 @@ type Eval b abs tb o = o -> Repl b abs tb o (Maybe (Expr b abs tb,Type tb))
 
 -- | A Print function takes a parsed thing 'o', a possible expression and type
 -- it reduced to and returns some output Text to print.
-type Print b abs tb o = Document o => o -> Maybe (Expr b abs tb, Type tb) -> Repl b abs tb o Text
+type Print b abs tb o = Document o => o -> Maybe (Expr b abs tb, Type tb) -> Repl b abs tb o Doc
 
 -- | A ReplConfig is a set of active Grammar alongside Read, Eval and Print
 -- functions defined upon it.
@@ -282,7 +282,7 @@ replPrint
   :: Document o
   => o
   -> Maybe (Expr b abs tb, Type tb)
-  -> Repl b abs tb o Text
+  -> Repl b abs tb o Doc
 replPrint a mEvaluated = Repl $ \replState ->
   let printF = _print . _replConfig $ replState
       Repl replF = printF a mEvaluated
@@ -294,7 +294,7 @@ replPrint a mEvaluated = Repl $ \replState ->
 replStep
   :: Document o
   => Text
-  -> Repl b abs tb o Text
+  -> Repl b abs tb o Doc
 replStep input = do
   parsedOutput <- replRead input
   mEvaluated   <- replEval parsedOutput
