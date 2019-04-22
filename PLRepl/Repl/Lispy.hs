@@ -4,6 +4,7 @@
   , ScopedTypeVariables
   , FlexibleContexts
   , OverloadedStrings
+  , UndecidableInstances
   #-}
 {-|
 Module      : PLRepl.Repl
@@ -42,6 +43,13 @@ import Data.Monoid
 import qualified Data.Text as Text
 
 import qualified Text.Megaparsec as Mega
+
+-- TODO: These instances should use the Lispy Grammar to Document the type rather
+-- than it's show Instance. It should likely live in Lispy.
+instance (Show (TypeF tb typ), Document typ) => Document (TypeF tb typ) where
+  document = usingShow
+instance (Show (ExprF b abs tb expr), Document expr) => Document (ExprF b abs tb expr) where
+  document = usingShow
 
 -- | A ReplConfig for entire lispy expressions parameterised over individual
 -- Grammars for bindings, abstractions and type bindings and accepting a custom Read
@@ -150,8 +158,8 @@ megaparsecGrammarParser grammar =
                 Right expr
                   -> pure expr
 
-instance (Ord t, Mega.ShowToken t, Mega.ShowErrorComponent e) => Document (Mega.ParseError t e) where
-  document = text . Text.pack . Mega.parseErrorPretty
+instance (Mega.Stream s, Mega.ShowErrorComponent e) => Document (Mega.ParseErrorBundle s e) where
+  document = string . Mega.errorBundlePretty
 
 -- Transform a parsed expr, its reduction and type into some output to print
 printerF

@@ -139,6 +139,8 @@ data SomeReplState b abs tb = forall o. Document o => SomeReplState (ReplState b
 instance
   ( Document b
   , Document tb
+  , Document (ExprBindCtx b tb)
+  , Document (TypeBindings tb)
   , Document (TypeCtx tb)
   , Binds b (Type tb)
   , Binds tb Kind

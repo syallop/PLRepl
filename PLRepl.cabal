@@ -11,7 +11,7 @@ cabal-version:       >=1.10
 executable pl
   main-is:             PLRepl.hs
 
-  build-depends:       base >=4.7
+  build-depends:       base >= 4.12
 
                      , PL         >= 0.1
                      , PLEditor   >= 0.1

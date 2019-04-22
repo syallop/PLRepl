@@ -1,27 +1,56 @@
+resolver: lts-13.1
 flags:
   haskeline:
     brick: true
 extra-package-dbs: []
 packages:
 - '.'
-- ../PL
-- ../PLGrammar
-- ../PLParser
-- ../PLPrinter
-- ../PLEditor
-- ../PLLispy
-- ../PLLabel
-- ../Reversible
+- location:
+    git: https://github.com/syallop/PL
+    commit: 582a19e54abeded1de6f0e3b4453605f4376099c
+  extra-dep: true
+- location:
+    git: https://github.com/syallop/PLEditor
+    commit: 8f474ec94f444c3da6f4e467231e5cf03761b67e
+  extra-dep: true
+- location:
+    git: https://github.com/syallop/PLLispy
+    commit: c1466743ea0585675eca98dd700355761caa45a1
+  extra-dep: true
+- location:
+    git: https://github.com/syallop/PLParser
+    commit: 7adea4ba5ec67f7fee80f9903595e1ab825e313b
+  extra-dep: true
+- location:
+    git: https://github.com/syallop/PLGrammar
+    commit: 4a56e0cb09cd2bc5044625bfee2f7ff5393f749b
+  extra-dep: true
+- location:
+    git: https://github.com/syallop/PLPrinter
+    commit: 65f4d3805c06fbbe0e4313f17a2129e5fe2187f9
+  extra-dep: true
+- location:
+    git: https://github.com/syallop/Reversible
+    commit: 5185a10559f0567ba927ea67a0b90f446d87dbe3
+  extra-dep: true
+- location:
+    git: https://github.com/syallop/PLLabel
+    commit: 9433cf7963e43b4df06f57939218956c3d2dacc4
+  extra-dep: true
 - location:
     git: https://github.com/syallop/DSL-Compose.git
-    commit: 8e49641f049c586e21c36c6982f51670082e1e3f
+    commit: 5a95ae855f3291aa3193a7424892035226b10d2f
   extra-dep: true
 - location:
     git: https://github.com/rootmos/haskeline.git
     commit: bf8164bc747e299524548417f3e947cbd3d47f68
   extra-dep: true
 extra-deps:
-- haskeline-0.7.4.0
-- megaparsec-6.4.0
-- parser-combinators-0.4.0
-resolver: lts-9.18
+- megaparsec-7.0.4
+- parser-combinators-1.0.1
+- brick-0.46
+- config-ini-0.2.4.0@sha256:38a6d484d471c6fac81445de2eac8c4e8c82760962fca5491ae1c3bfca9c4047
+- data-clist-0.1.2.2@sha256:4d70add0a200a178853cd37c6469101bac3c36aebb3aa9c503ff225211b1a8c9
+- text-zipper-0.10.1@sha256:8b73a97a3717a17df9b0a722b178950c476ff2268ca5c583e99d010c94af849e
+- word-wrap-0.4.1@sha256:f72233b383ef569c557bfd9812cbb8e306c415ce509082c0bd15ee51c0239ccc
+allow-newer: true
