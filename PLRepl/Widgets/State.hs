@@ -120,6 +120,7 @@ initialState initialFocus = State
                                     typeBindCtx
                                     typeBindings
             $ fromJust $ insertType "Bool" (fixType $ SumT $ map fixType $ [ProductT [], ProductT []])
+            $ fromJust $ insertRecType "Nat" (fixType $ SumT $ map fixType $ [ProductT [], Named "Nat"])
             $ fromJust $ insertType "Unit" (fixType $ SumT []) typeCtx
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
