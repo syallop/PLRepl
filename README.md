@@ -57,7 +57,8 @@ Below is an overview of some of the commands the repl understands.
 | `right`               | focused        | Move the cursor right in the focused widget |
 | `ctrl + right`        | focused        | Make the current view within a widget wider |
 | `any other character` | editor         | Insert character into the editor widget |
-| `DELETE`              | editor         | Delete the current character in the editor widget |
+| `HOME`                | editor         | Insert a random code sample into the editor |
+| `DELETE/ BACKSPACE`   | editor         | Delete the current character in the editor widget |
 | `ENTER`               | editor         | Insert a newline in the editor widget | 
 | `INSERT`              | editor, output | Grab the text in the editor and run it through the configured repl. This usually means parsing, type-checking and evaluating. Output appears in the output widget. If successful, the editor widget is cleared | 
 | `PAGE-UP`             | global         | Switch focus to the next widget |

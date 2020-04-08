@@ -9,6 +9,9 @@ import qualified PLEditor as E
 
 import Brick
 
+import Data.Text (Text)
+import qualified Data.Text as Text
+
 -- | An event which may be sent to the Editor widget.
 data EditorEvent
   = CursorLeft      -- ^ Move the cursor left
@@ -17,6 +20,7 @@ data EditorEvent
   | CursorDown      -- ^ Move the cursor down
   | DeleteChar      -- ^ Delete a character at the cursor
   | InsertChar Char -- ^ Insert a character at the cursor
+  | InsertText Text -- ^ Insert a string of characters at the cursor
   | NewLine         -- ^ Insert a newline
   | WiderView Int   -- ^ Widen (or contract) the width of the viewport
   | TallerView Int  -- ^ Tallen (or shorten) the height of the viewport
@@ -45,6 +49,9 @@ handleEditorEvent editorEv (EditorState editor view) = case editorEv of
 
   InsertChar c
     -> pure $ EditorState (E.insertCharacter c editor) view
+
+  InsertText txt
+    -> pure $ EditorState (Text.foldl (\e c -> if c == '\n' then E.newline e else E.insertCharacter c e) editor txt) view
 
   NewLine
     -> pure $ EditorState (E.newline editor) view

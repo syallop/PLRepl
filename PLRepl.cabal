@@ -29,6 +29,7 @@ executable pl
                      , mtl
                      , text
                      , transformers
+                     , random
                      , vty
 
   other-modules:       PLRepl.Widgets.Event

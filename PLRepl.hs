@@ -74,6 +74,9 @@ import Data.Text (Text)
 import System.Directory
 import System.Exit
 import qualified Data.Text as Text
+import Data.Map (Map)
+import qualified Data.Map as Map
+import System.Random
 
 -- | The ReplApp is a Brick App which handles `Events` to update `State`
 -- making use of `Name`'s to name resources.
@@ -192,6 +195,12 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
               continue st
       Vty.KBS
         -> liftIO (writeBChan chan . EditorEv $ DeleteChar) >> continue st
+
+      -- home => insert a random code fragment in the editor.
+      Vty.KHome
+        -> do randomCode <- liftIO $ randomExample
+              liftIO (writeBChan chan . EditorEv . InsertText $ randomCode)
+              continue st
 
       -- enter => insert a newline in the editor.
       -- TODO: Should this still happen when another widget has focus?
@@ -379,9 +388,51 @@ usage =
   , "- The reduction"
   , ""
   , "Keys:"
-  , "Focus pane : Pg Up/Down"
-  , "Delete char: Backspace, DEL"
-  , "Newline    : ENTER"
-  , "Evaluate   : INS"
+  , "Evaluate       : INS"
+  , "Focus pane     : Pg Up/Down"
+  , "Random example : HOME"
+  , ""
   , "Exit       : ESC"
   ]
+
+-- Generate random example code
+randomExample :: IO Text
+randomExample = do
+  let exampleNames = Map.keys examples
+      nExamples    = length exampleNames
+  randomIndex <- randomRIO (0,nExamples - 1)
+  let randomName = exampleNames !! randomIndex
+      Just randomCode = Map.lookup randomName examples
+  return randomCode
+
+examples :: Map Text Text
+examples = Map.fromList
+  [ ("boolean identity function"
+    ,"\\Bool 0"
+    )
+
+  , ("subtract two"
+    ,"\\Nat (CASE 0\n\
+     \          (| (+1 (+1 ?)) 0)\n\
+     \          (+0 (*) (*) Nat)\n\
+     \      )"
+    )
+
+  , ("boolean and"
+    ,"\\Bool (\\Bool (CASE 0\n\
+     \                 (\n\
+     \                   (|(+0 (*)) (+0 (*) (*) (*)))\n\
+     \                 )\n\
+     \                 (CASE 1\n\
+     \                   (\n\
+     \                     (|(+0 (*)) (+0 (*) (*) (*)))\n\
+     \                   )\n\
+     \                   (\n\
+     \                     (+1 (*) (*) (*))\n\
+     \                   )\n\
+     \                 )\n\
+     \               )\n\
+     \       )"
+   )
+  ]
+
