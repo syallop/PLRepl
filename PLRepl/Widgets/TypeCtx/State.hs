@@ -18,12 +18,12 @@ import qualified Data.Text as Text
 type TypeCtxState = EditorState
 
 emptyTypeCtxState :: TypeCtxState
-emptyTypeCtxState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 20 $ E.widerView 80 $ E.emptyView)
+emptyTypeCtxState = EditorState (E.makeEditor E.emptyLines) (E.tallerView 20 $ E.widerView 40 $ E.emptyView)
 
 newTypeCtxState
   :: [Text.Text]
   -> TypeCtxState
-newTypeCtxState lines = EditorState (E.makeEditor $ foldr E.prependLine E.emptyLines $ map E.textLine lines) (E.tallerView 30 $ E.widerView 80 $ E.emptyView)
+newTypeCtxState lines = EditorState (E.makeEditor $ foldr E.prependLine E.emptyLines $ map E.textLine lines) (E.tallerView 30 $ E.widerView 40 $ E.emptyView)
 
 drawTypeCtx
   :: n

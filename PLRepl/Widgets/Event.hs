@@ -8,6 +8,9 @@ module PLRepl.Widgets.Event
 
   , TypeCtxEvent
   , handleTypeCtxEvent
+
+  , UsageEvent
+  , handleUsageEvent
   )
   where
 
@@ -15,6 +18,7 @@ import PLRepl.Widgets.State
 import PLRepl.Widgets.Editor.Event
 import PLRepl.Widgets.Output.Event
 import PLRepl.Widgets.TypeCtx.Event
+import PLRepl.Widgets.Usage.Event
 
 import PLRepl.Repl
 
@@ -34,6 +38,9 @@ data Event n
 
   -- An event to the TypeCtx output.
   | TypeCtxEv TypeCtxEvent
+
+  -- An event to the Usage output.
+  | UsageEv UsageEvent
 
   -- Toggle focus to a name.
   | FocusOn (Maybe n)

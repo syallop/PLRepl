@@ -24,6 +24,10 @@ data Name
   | TypeCtxViewport
   | TypeCtxCursor
 
+  | UsageWidget
+  | UsageViewport
+  | UsageCursor
+
   -- The entire sidebar.
   | Sidebar
   deriving (Eq, Ord, Show)
@@ -40,6 +44,9 @@ nextFocus n = case n of
     -> TypeCtxCursor
 
   TypeCtxCursor
+    -> UsageCursor
+
+  UsageCursor
     -> EditorCursor
 
 -- | Manually map a 'focusable' name to the previous.
@@ -48,11 +55,14 @@ previousFocus
   -> Name
 previousFocus n = case n of
   EditorCursor
-    -> TypeCtxCursor
+    -> UsageCursor
 
   OutputCursor
     -> EditorCursor
 
   TypeCtxCursor
     -> OutputCursor
+
+  UsageCursor
+    -> TypeCtxCursor
 

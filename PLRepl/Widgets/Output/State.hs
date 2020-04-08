@@ -18,7 +18,7 @@ type OutputState = EditorState
 emptyOutputState :: OutputState
 emptyOutputState = EditorState
   { _editor = E.makeEditor E.emptyLines
-  , _view   = E.tallerView 20 $ E.widerView 80 $ E.emptyView
+  , _view   = E.tallerView 20 $ E.widerView 160 $ E.emptyView
   }
 
 newOutputState
@@ -26,7 +26,7 @@ newOutputState
   -> OutputState
 newOutputState lines = EditorState
   { _editor = E.makeEditor $ foldr E.prependLine E.emptyLines $ map E.textLine lines
-  , _view   = E.tallerView 20 $ E.widerView 80 $ E.emptyView
+  , _view   = E.tallerView 20 $ E.widerView 160 $ E.emptyView
   }
 
 drawOutput

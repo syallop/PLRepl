@@ -23,6 +23,12 @@ module PLRepl.Widgets.State
   , typeCtxText
   , emptyTypeCtxState
   , newTypeCtxState
+
+  , UsageState
+  , drawUsage
+  , usageText
+  , emptyUsageState
+  , newUsageState
   )
   where
 
@@ -30,6 +36,7 @@ import PLRepl.Widgets.Editor.State
 import PLRepl.Widgets.Name
 import PLRepl.Widgets.Output.State
 import PLRepl.Widgets.TypeCtx.State
+import PLRepl.Widgets.Usage.State
 
 import PLRepl.Repl
 import PLRepl.Repl.Lispy
@@ -92,6 +99,10 @@ data State n = State
   -- current TypeCtx which is held in the ReplCtx.
   , _typeCtxState :: TypeCtxState
 
+  -- The usageState corresponds to an output widget used to display usage
+  -- information.
+  , _usageState   :: UsageState
+
   -- A possible named widget to focus input on.
   , _focusOn      :: Maybe n
   }
@@ -100,13 +111,14 @@ data State n = State
 --
 -- This function is a particular mess and is currently being used to drive
 -- testing by switching out the repl config and trialing input.
-initialState :: Maybe n -> State n
-initialState initialFocus = State
+initialState :: Maybe n -> [Text] -> State n
+initialState initialFocus usage = State
   { _replState    = initialReplState
   , _replConfigs  = initialReplConfigs
   , _editorState  = emptyEditorState
   , _outputState  = emptyOutputState
   , _typeCtxState = initialTypeCtxState
+  , _usageState   = newUsageState usage
   , _focusOn      = initialFocus
   }
   where

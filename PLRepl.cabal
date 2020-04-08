@@ -43,6 +43,9 @@ executable pl
                      , PLRepl.Widgets.TypeCtx
                      , PLRepl.Widgets.TypeCtx.Event
                      , PLRepl.Widgets.TypeCtx.State
+                     , PLRepl.Widgets.Usage
+                     , PLRepl.Widgets.Usage.Event
+                     , PLRepl.Widgets.Usage.State
                      , PLRepl.Repl
                      , PLRepl.Repl.Lispy
 

@@ -31,6 +31,8 @@ In particular:
 
   - TypeCtx: An output area containing defined type-definitions.
 
+  - Usage: An output area containing usage information
+
 PLRepl.Repl abstracts the Read Eval Print Loop for some PL repl.
 It accepts a repl configuration which it understands how to drive.
 
@@ -108,28 +110,32 @@ handleEvent
   -> PL.State PL.Name
   -> BrickEvent PL.Name (PL.Event PL.Name)
   -> EventM PL.Name (Next (PL.State PL.Name))
-handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeCtxSt focus)) ev = case ev of
+handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeCtxSt usageSt focus)) ev = case ev of
   -- an event from our application
   AppEvent appEv -> case appEv of
     -- Replctx must be updated
     PL.ReplaceReplState someReplState'
-      -> continue (PL.State someReplState' replConfigs editorSt outputSt typeCtxSt focus)
+      -> continue (PL.State someReplState' replConfigs editorSt outputSt typeCtxSt usageSt focus)
 
     -- An event to the editor
     PL.EditorEv editorEv
       -> do editorSt' <- handleEditorEvent editorEv editorSt
-            continue (PL.State someReplState replConfigs editorSt' outputSt typeCtxSt focus)
+            continue (PL.State someReplState replConfigs editorSt' outputSt typeCtxSt usageSt focus)
 
     PL.OutputEv outputEv
       -> do outputSt' <- handleOutputEvent outputEv outputSt
-            continue (PL.State someReplState replConfigs editorSt outputSt' typeCtxSt focus)
+            continue (PL.State someReplState replConfigs editorSt outputSt' typeCtxSt usageSt focus)
 
     PL.TypeCtxEv typeCtxEv
       -> do typeCtxSt' <- handleTypeCtxEvent typeCtxEv typeCtxSt
-            continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt' focus)
+            continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt' usageSt focus)
+
+    PL.UsageEv usageEv
+      -> do usageSt' <- handleUsageEvent usageEv usageSt
+            continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt usageSt' focus)
 
     PL.FocusOn n
-      -> continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt n)
+      -> continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt usageSt n)
 
   -- A virtual terminal event. Most events will be sent to whatever widget we
   -- consider focused. Some may be global.
@@ -221,6 +227,7 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                                            SomeReplState replState
                                              -> newTypeCtxState . Text.lines . renderDocument . _typeCtx $ replState
                                         )
+                                        usageSt
                                         (Just OutputCursor))
 
                 -- A successful parse
@@ -234,6 +241,7 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                                               SomeReplState replState'
                                                 -> newTypeCtxState . Text.lines . renderDocument . _typeCtx $ replState'
                                            )
+                                           usageSt
                                            (Just EditorCursor))
 
       -- page-up => switch focus to the next widget.
@@ -268,6 +276,7 @@ eventDestination focusOn = case focusOn of
   EditorCursor  -> EditorEv
   OutputCursor  -> OutputEv
   TypeCtxCursor -> TypeCtxEv
+  UsageCursor   -> UsageEv
   _ -> EditorEv
 
 -- | Named attributes describing reusable layout and drawing properties.
@@ -287,15 +296,15 @@ drawUI
   :: PL.State PL.Name
   -> [Widget PL.Name]
 drawUI st =
-  [ center $ border $ hLimit 200 $ vLimit 50 $ everything
+  [ center $ borderWithLabel (str "PL REPL") $ hLimit 200 $ vLimit 50 $ everything
   ]
   where
-    -- |--------|---------|
-    -- |        |         |
-    -- | editor | sidebar |
-    -- |--------|         |
-    -- | output |         |
-    -- |--------|---------|
+    -- |-------------|--------|
+    -- |             | types  |
+    -- | editor      |        |
+    -- |-------------|--------|
+    -- | output      | usage  |
+    -- |-------------|--------|
     everything :: Widget PL.Name
     everything = mainWidgets <+> sidebar
 
@@ -314,7 +323,7 @@ drawUI st =
     -- |--------|
     editor :: Widget PL.Name
     editor = hLimit 160
-           $ border
+           $ borderWithLabel (str "Editor")
            $ viewport EditorViewport Vertical
            $ vLimit 48
            $ drawEditor EditorCursor (_editorState st)
@@ -323,24 +332,35 @@ drawUI st =
     -- | output |
     -- |--------|
     output :: Widget PL.Name
-    output  = hLimit 160
-            $ border
-            $ viewport OutputViewport Horizontal
-            $ vLimit 100
-            $ drawOutput OutputCursor (_outputState st)
+    output = hLimit 160
+           $ borderWithLabel (str "Output")
+           $ viewport OutputViewport Horizontal
+           $ vLimit 100
+           $ drawOutput OutputCursor (_outputState st)
 
     -- |---------|
-    -- |         |
-    -- | sidebar |
-    -- |         |
+    -- |  types  |
     -- |         |
     -- |---------|
+    -- |  usage  |
+    -- |---------|
     sidebar :: Widget PL.Name
-    sidebar = hLimit 40
-            $ border
-            $ viewport TypeCtxViewport Horizontal
-            $ vLimit 20
-            $ drawTypeCtx TypeCtxCursor (_typeCtxState st)
+    sidebar = types <=> usage
+
+    types :: Widget PL.Name
+    types = hLimit 40
+          $ borderWithLabel (str "Built in types")
+          $ viewport TypeCtxViewport Horizontal
+          $ vLimit 20
+          $ drawTypeCtx TypeCtxCursor (_typeCtxState st)
+
+    usage :: Widget PL.Name
+    usage = hLimit 40
+          $ borderWithLabel (str "Usage")
+          $ viewport UsageViewport Horizontal
+          $ vLimit 20
+          $ hLimit 38
+          $ drawUsage UsageCursor (_usageState st)
 
 main :: IO ()
 main = run
@@ -349,5 +369,20 @@ run :: IO ()
 run = do
   -- Buffer events
   evChan <- newBChan 10
-  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) (initialState $ Just EditorCursor)
+  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) (initialState (Just EditorCursor) usage)
 
+usage :: [Text]
+usage =
+  [ "Type PL expressions in the editor (which may reference the built in types) using the Lispy syntax. Evaluating will display in the output pane:"
+  , "- Parse errors"
+  , "- Type errors"
+  , "- The infered type"
+  , "- The reduction"
+  , ""
+  , "Keys:"
+  , "Focus pane : Pg Up/Down"
+  , "Delete char: DEL"
+  , "Newline    : ENTER"
+  , "Evaluate   : INS"
+  , "Exit       : ESC"
+  ]

@@ -22,17 +22,18 @@ data EditorState = EditorState
 emptyEditorState :: EditorState
 emptyEditorState = EditorState
   { _editor = E.makeEditor E.emptyLines                       -- The initial editors lines are empty
-  , _view   = E.tallerView 20 . E.widerView 100 $ E.emptyView -- Give the initial view some size.
+  , _view   = E.tallerView 20 . E.widerView 160 $ E.emptyView -- Give the initial view some size.
   }
 
 -- | Draw editor state as a widget with a cursor 'n'.
+-- Text that overflows the line will be cut off rather than wrapping.
+-- TODO: Extend the widget to scroll the editors view.
 drawEditor
   :: n
   -> EditorState
   -> Widget n
 drawEditor editorCursor (EditorState editor view) =
-  (\(lines,pos) -> Brick.showCursor editorCursor (Location pos) . str
-                                                                . Text.unpack
+  (\(lines,pos) -> Brick.showCursor editorCursor (Location pos) . txt
                                                                 . Text.unlines
                                                                 . map E.lineText
                                                                 . E.renderLines
