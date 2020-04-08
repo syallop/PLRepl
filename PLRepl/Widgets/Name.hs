@@ -13,19 +13,15 @@ data Name
 
   -- The editor widget.
   | EditorWidget
-  | EditorViewport
   | EditorCursor
 
   | OutputWidget
-  | OutputViewport
   | OutputCursor
 
   | TypeCtxWidget
-  | TypeCtxViewport
   | TypeCtxCursor
 
   | UsageWidget
-  | UsageViewport
   | UsageCursor
 
   -- The entire sidebar.

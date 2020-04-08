@@ -296,7 +296,7 @@ drawUI
   :: PL.State PL.Name
   -> [Widget PL.Name]
 drawUI st =
-  [ center $ borderWithLabel (str "PL REPL") $ hLimit 200 $ vLimit 50 $ everything
+  [ center $ everything
   ]
   where
     -- |-------------|--------|
@@ -306,7 +306,7 @@ drawUI st =
     -- | output      | usage  |
     -- |-------------|--------|
     everything :: Widget PL.Name
-    everything = mainWidgets <+> sidebar
+    everything = hLimitPercent 60 mainWidgets <+> sidebar
 
     -- |--------|
     -- |        |
@@ -322,20 +322,18 @@ drawUI st =
     -- | editor |
     -- |--------|
     editor :: Widget PL.Name
-    editor = hLimit 160
-           $ borderWithLabel (str "Editor")
-           $ viewport EditorViewport Vertical
-           $ vLimit 48
+    editor = borderWithLabel (str "Editor")
+           $ padRight Max
+           $ padBottom Max
            $ drawEditor EditorCursor (_editorState st)
 
     -- |--------|
     -- | output |
     -- |--------|
     output :: Widget PL.Name
-    output = hLimit 160
-           $ borderWithLabel (str "Output")
-           $ viewport OutputViewport Horizontal
-           $ vLimit 100
+    output = borderWithLabel (str "Output")
+           $ padRight Max
+           $ padBottom Max
            $ drawOutput OutputCursor (_outputState st)
 
     -- |---------|
@@ -348,18 +346,15 @@ drawUI st =
     sidebar = types <=> usage
 
     types :: Widget PL.Name
-    types = hLimit 40
-          $ borderWithLabel (str "Built in types")
-          $ viewport TypeCtxViewport Horizontal
-          $ vLimit 20
+    types = borderWithLabel (str "Built in types")
+          $ padRight Max
+          $ padBottom Max
           $ drawTypeCtx TypeCtxCursor (_typeCtxState st)
 
     usage :: Widget PL.Name
-    usage = hLimit 40
-          $ borderWithLabel (str "Usage")
-          $ viewport UsageViewport Horizontal
-          $ vLimit 20
-          $ hLimit 38
+    usage = borderWithLabel (str "Usage")
+          $ padRight Max
+          $ padBottom Max
           $ drawUsage UsageCursor (_usageState st)
 
 main :: IO ()
