@@ -187,6 +187,10 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
       -- delete => delete a character in the editor.
       -- TODO: Should this still happen when another widget has focus?
       Vty.KDel
+        -> do liftIO (writeBChan chan . EditorEv $ CursorRight)
+              liftIO (writeBChan chan . EditorEv $ DeleteChar)
+              continue st
+      Vty.KBS
         -> liftIO (writeBChan chan . EditorEv $ DeleteChar) >> continue st
 
       -- enter => insert a newline in the editor.
@@ -376,7 +380,7 @@ usage =
   , ""
   , "Keys:"
   , "Focus pane : Pg Up/Down"
-  , "Delete char: DEL"
+  , "Delete char: Backspace, DEL"
   , "Newline    : ENTER"
   , "Evaluate   : INS"
   , "Exit       : ESC"
