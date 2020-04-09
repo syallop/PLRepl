@@ -54,7 +54,15 @@ import PLLispy
 import PL.TyVar
 import PL.Type
 import PL.Var
+import PL.Error
+import PL.TypeCtx
+import PL.Kind
+import PL.Name
+
+import PLGrammar
+
 import PLPrinter
+import PLPrinter.Doc
 
 import Brick
 import Brick.BChan
@@ -77,6 +85,7 @@ import qualified Data.Text as Text
 import Data.Map (Map)
 import qualified Data.Map as Map
 import System.Random
+import Data.Maybe
 
 -- | The ReplApp is a Brick App which handles `Events` to update `State`
 -- making use of `Name`'s to name resources.
@@ -222,7 +231,9 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                   ?tb             = tyVar
               let (someReplState',eRes) = case someReplState of
                                             SomeReplState replState
-                                              -> first SomeReplState . (`_unRepl` replState) . PL.replStep $ txt
+                                              -> let step = PL.replStep txt
+                                                     (nextState, result) = _unRepl step replState
+                                                  in (SomeReplState nextState, result)
               case eRes of
                 -- Some repl error
                 Left err
@@ -235,11 +246,8 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                   -> continue (PL.State someReplState
                                         replConfigs
                                         editorSt
-                                        (newOutputState $ Text.lines $ renderDocument err)
-                                        (case someReplState of
-                                           SomeReplState replState
-                                             -> newTypeCtxState . Text.lines . renderDocument . _typeCtx $ replState
-                                        )
+                                        (newOutputState $ Text.lines $ (PLPrinter.render . ppError tyVar) err)
+                                        (typeCtxStateGivenReplState someReplState)
                                         usageSt
                                         (Just OutputCursor))
 
@@ -250,10 +258,7 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                                            replConfigs
                                            emptyEditorState
                                            (newOutputState $ Text.lines $ renderDocument a)
-                                           (case someReplState' of
-                                              SomeReplState replState'
-                                                -> newTypeCtxState . Text.lines . renderDocument . _typeCtx $ replState'
-                                           )
+                                           (typeCtxStateGivenReplState someReplState)
                                            usageSt
                                            (Just EditorCursor))
 

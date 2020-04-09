@@ -23,6 +23,9 @@ module PLRepl.Widgets.State
   , typeCtxText
   , emptyTypeCtxState
   , newTypeCtxState
+  , typeCtxStateGivenReplState
+  , ppTypeCtx
+  , ppError
 
   , UsageState
   , drawUsage
@@ -137,8 +140,15 @@ initialState initialFocus usage = State
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
-    exprConfig = lispyExprReplConfig plGrammarParser var (typ tyVar) tyVar
-    typeConfig = lispyTypeReplConfig plGrammarParser tyVar
+    exprPrinter :: Expr Var (Type TyVar) TyVar -> Doc
+    exprPrinter = fromMaybe mempty . pprint (toPrinter $ expr var (typ tyVar) tyVar)
+
+    exprConfig :: ReplConfig Var (Type TyVar) TyVar (Expr Var (Type TyVar) TyVar)
+    exprConfig = lispyExprReplConfig (plGrammarParser exprPrinter) var (typ tyVar) tyVar
+
+    typePrinter :: Type TyVar -> Doc
+    typePrinter = fromMaybe mempty . pprint (toPrinter $ typ tyVar)
+    typeConfig = lispyTypeReplConfig (plGrammarParser typePrinter) tyVar
 
       where
     initialReplConfigs :: Map GrammarName (SomeReplConfig Var (Type TyVar) TyVar)
@@ -151,8 +161,7 @@ initialState initialFocus usage = State
 typeCtxStateGivenReplState
   :: SomeReplState Var (Type TyVar) TyVar
   -> TypeCtxState
-typeCtxStateGivenReplState (SomeReplState replState) =
-  newTypeCtxState . Text.lines . renderDocument . _typeCtx $ replState
+typeCtxStateGivenReplState (SomeReplState replState) = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx tyVar) . _typeCtx $ replState
 
 instance Document a => Document [a] where
   document []     = mempty

@@ -1,4 +1,4 @@
-resolver: lts-13.1
+resolver: lts-14.20
 flags:
   haskeline:
     brick: true
@@ -7,7 +7,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/syallop/PL
-    commit: 582a19e54abeded1de6f0e3b4453605f4376099c
+    commit: 24e9409038ff6ae221de9300f59afe9518aaa2a9
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLEditor

@@ -37,6 +37,7 @@ module PLRepl.Repl
   , replPrint
 
   -- Convenience functions
+  , replGrammar
   , replError
   , replTypeCheck
   , replReduce
@@ -85,7 +86,7 @@ import Prelude hiding (Read)
 
 -- | A Read function takes a Grammar on 'o' and attempts to parse text into an
 -- 'o'.
-type Read b abs tb o = Document o => Grammar o -> Text -> Repl b abs tb o o
+type Read b abs tb o = Grammar o -> Text -> Repl b abs tb o o
 
 -- | An Eval function transforms some value 'o'. Into a Repl function which may
 -- succeed with a new expression along with its type.
@@ -94,13 +95,13 @@ type Eval b abs tb o = o -> Repl b abs tb o (Maybe (Expr b abs tb,Type tb))
 
 -- | A Print function takes the initial text, the parsed thing 'o', a possible expression and type
 -- it reduced to and returns some output Text to print.
-type Print b abs tb o = Document o => Text -> o -> Maybe (Expr b abs tb, Type tb) -> Repl b abs tb o Doc
+type Print b abs tb o = Text -> o -> Maybe (Expr b abs tb, Type tb) -> Repl b abs tb o Doc
 
 -- | A ReplConfig is a set of active Grammar alongside Read, Eval and Print
 -- functions defined upon it.
 data ReplConfig b abs tb o where
   ReplConfig
-    :: { _someGrammar :: Document o => Grammar o -- A Grammar to read.
+    :: { _someGrammar :: Grammar o -- A Grammar to read.
        , _read        :: Read  b abs tb o
        , _eval        :: Eval  b abs tb o
        , _print       :: Print b abs tb o
@@ -108,7 +109,7 @@ data ReplConfig b abs tb o where
     -> ReplConfig b abs tb o
 
 -- SomeReplConfig is a ReplConfig where the type of Grammar has been forgotten.
-data SomeReplConfig b abs tb = forall o. Document o => SomeReplConfig (ReplConfig b abs tb o)
+data SomeReplConfig b abs tb = forall o. SomeReplConfig (ReplConfig b abs tb o)
 
 -- | The empty ReplConfig always fails and outputs error documents for Read Eval
 -- and Print.
@@ -134,26 +135,7 @@ data ReplState b abs tb o = ReplState
   }
 
 -- SomeReplState is a ReplState where the type of Grammar has been forgotten.
-data SomeReplState b abs tb = forall o. Document o => SomeReplState (ReplState b abs tb o)
-
-instance
-  ( Document b
-  , Document tb
-  , Document (ExprBindCtx b tb)
-  , Document (TypeBindings tb)
-  , Document (TypeCtx tb)
-  , Binds b (Type tb)
-  , Binds tb Kind
-  ) => Document (ReplState b abs tb o) where
-    document (ReplState replConfig exprBindCtx typeBindCtx typeBindings typeCtx) = mconcat
-      [ document exprBindCtx
-      , lineBreak
-      , document typeBindCtx
-      , lineBreak
-      , document typeBindings
-      , lineBreak
-      , document typeCtx
-      ]
+data SomeReplState b abs tb = forall o. SomeReplState (ReplState b abs tb o)
 
 -- | An initial, empty replst
 emptyReplState
@@ -214,9 +196,6 @@ replTypeCheck
      , Binds b (Type tb)
      , Binds tb Kind
      , Ord tb
-     , Document b
-     , Document abs
-     , Document tb
      )
   => Expr b abs tb
   -> Repl b abs tb o (Type tb)
@@ -251,9 +230,6 @@ replEvalSimple
      , Abstracts abs tb
      , Eq b
      , Ord tb
-     , Document b
-     , Document abs
-     , Document tb
      )
   => Eval b abs tb (Expr b abs tb)
 replEvalSimple expr = do
@@ -263,8 +239,7 @@ replEvalSimple expr = do
 
 -- | Feed read text into the Repls configured read function.
 replRead
-  :: Document o
-  => Text
+  :: Text
   -> Repl b abs tb o o
 replRead input = Repl $ \replState ->
   let readF      = _read . _replConfig $ replState
@@ -279,6 +254,10 @@ replEval a = Repl $ \replState ->
       Repl replF = evalF a
    in replF replState
 
+replGrammar
+  :: Repl b abs tb o (Grammar o)
+replGrammar = Repl $ \replState -> (replState, Right . _someGrammar . _replConfig $ replState)
+
 replPrint
   :: Print b abs tb o
 replPrint originalTxt a mEvaluated = Repl $ \replState ->
@@ -290,8 +269,7 @@ replPrint originalTxt a mEvaluated = Repl $ \replState ->
 -- Drive this function with input, do something with the output and loop for a
 -- REPL.
 replStep
-  :: Document o
-  => Text
+  :: Text
   -> Repl b abs tb o Doc
 replStep input = do
   parsedOutput <- replRead input

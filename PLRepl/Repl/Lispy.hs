@@ -5,6 +5,8 @@
   , FlexibleContexts
   , OverloadedStrings
   , UndecidableInstances
+  , TypeSynonymInstances
+  , FlexibleInstances
   #-}
 {-|
 Module      : PLRepl.Repl
@@ -36,20 +38,16 @@ import PL.Type
 import PL.Kind
 import PL.Abstracts
 import PL.Error
+import PL.TyVar
+import PL.FixType
 
 import Data.Text (Text)
 import Data.Maybe
 import Data.Monoid
 import qualified Data.Text as Text
+import qualified Data.Map as Map
 
 import qualified Text.Megaparsec as Mega
-
--- TODO: These instances should use the Lispy Grammar to Document the type rather
--- than it's show Instance. It should likely live in Lispy.
-instance (Show (TypeF tb typ), Document typ) => Document (TypeF tb typ) where
-  document = usingShow
-instance (Show (ExprF b abs tb expr), Document expr) => Document (ExprF b abs tb expr) where
-  document = usingShow
 
 -- | A ReplConfig for entire lispy expressions parameterised over individual
 -- Grammars for bindings, abstractions and type bindings and accepting a custom Read
@@ -67,20 +65,18 @@ lispyExprReplConfig
      , Binds b (Type tb)
      , Binds tb Kind
      , Abstracts abs tb
-     , Document b
-     , Document abs
-     , Document tb
+     , o ~ Expr b abs tb
      )
-  => (forall o. Document o => Grammar o -> Text -> Repl b abs tb o o)
+  => (Grammar o -> Text -> Repl b abs tb o o)
   -> Grammar b
   -> Grammar abs
   -> Grammar tb
   -> ReplConfig b abs tb (Expr b abs tb)
 lispyExprReplConfig grammarParser b abs tb = ReplConfig
-  { _someGrammar = expr b abs tb     -- The expr grammar with supplied sub-grammars.
-  , _read        = grammarParser     -- Supplied read function
-  , _eval        = replEvalSimple    -- Use default eval function
-  , _print       = printerF b abs tb -- aand a printer we define on the supplied sub-grammars.
+  { _someGrammar = expr b abs tb               -- The expr grammar with supplied sub-grammars.
+  , _read        = grammarParser               -- Supplied read function
+  , _eval        = replEvalSimple              -- Use default eval function
+  , _print       = printerF (fromMaybe mempty . pprint (toPrinter $ typ tb)) -- aand a printer we define on the supplied sub-grammars.
   }
 
 lispyTypeReplConfig
@@ -93,11 +89,9 @@ lispyTypeReplConfig
      , Binds b (Type tb)
      , Binds tb Kind
      , Abstracts abs tb
-     , Document b
-     , Document abs
-     , Document tb
+     , o ~ Type tb
      )
-  => (forall o. Document o => Grammar o -> Text -> Repl b abs tb o o)
+  => (Grammar o -> Text -> Repl b abs tb o o)
   -> Grammar tb
   -> ReplConfig b abs tb (Type tb)
 lispyTypeReplConfig grammarParser tb = ReplConfig
@@ -115,7 +109,7 @@ lispyTypeReplConfig grammarParser tb = ReplConfig
 -- | Read a Grammar with some Parser, report errors but otherwise do nothing.
 readOnlyConfig
   :: Grammar o
-  -> (forall o. Document o => Grammar o -> Text -> Repl b abs tb o o)
+  -> (forall o. Grammar o -> Text -> Repl b abs tb o o)
   -> ReplConfig b abs tb o
 readOnlyConfig grammar grammarParser = ReplConfig
   { _someGrammar = grammar
@@ -127,15 +121,15 @@ readOnlyConfig grammar grammarParser = ReplConfig
 
 -- Convert a Grammar to a parser using PLParser.
 plGrammarParser
-  :: Document o
-  => Grammar o
+  :: (o -> Doc)
+  -> Grammar o
   -> Text
   -> Repl b abs tb o o
-plGrammarParser grammar =
+plGrammarParser pp grammar =
   let plParser = toParser grammar
    in \txt -> case PLParser.runParser plParser txt of
                 f@(PLParser.ParseFailure expected cursor)
-                  -> replError . EMsg . document $ f
+                  -> replError . EMsg . ppParseResult pp $ f
 
                 s@(PLParser.ParseSuccess expr cursor)
                   | Text.null $ PLParser.remainder cursor
@@ -143,6 +137,40 @@ plGrammarParser grammar =
 
                   | otherwise
                    -> replError $ EMsg $ text "Parse succeeded but there were trailing characters: " <> document cursor
+
+ppParseResult
+  :: (a -> Doc)
+  -> PLParser.ParseResult a
+  -> Doc
+ppParseResult ppA p = case p of
+    PLParser.ParseSuccess a leftovers
+      -> text "Parsed: " <> ppA a <> text "with leftovers" <> document leftovers
+
+    PLParser.ParseFailure failures cur0
+      -> mconcat $
+           [ text "Parse failure at:"
+           , lineBreak
+
+           , indent1 $ document cur0
+           , lineBreak
+           ]
+           ++
+           if null failures
+             then mempty
+             else [ text "The failures backtracked from were:"
+                  , lineBreak
+                  , indent1 . mconcat
+                            . map (\(cursor,expected) -> mconcat [ document cursor
+                                                                 , document expected
+                                                                 , lineBreak
+                                                                 , lineBreak
+                                                                 ]
+                                  )
+                            . Map.toList
+                            . PLParser.collectFailures
+                            $ failures
+                  ]
+
 
 -- Convert a Grammar to a parser using Megaparsec.
 megaparsecGrammarParser
@@ -153,13 +181,10 @@ megaparsecGrammarParser grammar =
   let megaparsecParser = PLMega.toParser grammar
    in \txt -> case Mega.runParser megaparsecParser "" txt of
                 Left err
-                  -> replError . EMsg . document $ err
+                  -> replError . EMsg . string. Mega.errorBundlePretty $ err
 
                 Right expr
                   -> pure expr
-
-instance (Mega.Stream s, Mega.ShowErrorComponent e) => Document (Mega.ParseErrorBundle s e) where
-  document = string . Mega.errorBundlePretty
 
 -- Transform a parsed expr, its reduction and type into some output to print
 printerF
@@ -172,46 +197,38 @@ printerF
      , Binds b (Type tb)
      , Binds tb Kind
      , Abstracts abs tb
-     , Document b
-     , Document abs
-     , Document tb
      )
-  => Grammar b
-  -> Grammar abs
-  -> Grammar tb
+  => (Type tb -> Doc)
   -> Print b abs tb (Expr b abs tb)
-printerF b abs tb inputTxt parsed mEval =
-  let -- A printer for expressions.
-      exprPrinter = toPrinter $ expr b abs tb
+printerF ppType = \inputTxt parsed mEval -> do
+  grammar <- replGrammar
+  let ppExpr = fromMaybe mempty . pprint (toPrinter grammar)
 
-      -- A printer for types.
-      typePrinter = toPrinter $ typ tb
+  pure . mconcat $
+    [ text "read text:"
+    , lineBreak
+    , text inputTxt -- TODO: Raw text?
+    , lineBreak, lineBreak
 
-   in pure . mconcat $
-        [ text "read text:"
-        , lineBreak
-        , text inputTxt -- TODO: Raw text?
-        , lineBreak, lineBreak
+    , text "parsed input:"
+    , lineBreak
+    , indent 1 $ ppExpr parsed
+    , lineBreak, lineBreak
+    ]
+    ++
+    case mEval of
+      Nothing
+        -> []
 
-        , text "parsed input:"
-        , lineBreak
-        , indent 1 $ fromMaybe mempty $ pprint exprPrinter parsed
-        , lineBreak, lineBreak
-        ]
-        ++
-        case mEval of
-          Nothing
-            -> []
+      Just (redExpr, ty)
+        -> [ text "which reduces to: "
+           , lineBreak
+           , indent 1 $ ppExpr redExpr
+           , lineBreak, lineBreak
 
-          Just (redExpr, ty)
-            -> [ text "which reduces to: "
-               , lineBreak
-               , indent 1 $ fromMaybe mempty $ pprint exprPrinter redExpr
-               , lineBreak, lineBreak
-
-               , text "with type:"
-               , lineBreak
-               , indent 1 $ fromMaybe mempty $ pprint typePrinter ty
-               , lineBreak
-               ]
+           , text "with type:"
+           , lineBreak
+           , indent 1 $ ppType ty
+           , lineBreak
+           ]
 
