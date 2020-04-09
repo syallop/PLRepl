@@ -211,7 +211,7 @@ printerF ppType = \inputTxt parsed mEval -> do
   pure . mconcat $
     [ text "read text:"
     , lineBreak
-    , text inputTxt -- TODO: Raw text?
+    , rawText inputTxt
     , lineBreak, lineBreak
 
     , text "parsed input:"
