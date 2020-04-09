@@ -19,6 +19,7 @@ data EditorEvent
   | CursorUp        -- ^ Move the cursor up
   | CursorDown      -- ^ Move the cursor down
   | DeleteChar      -- ^ Delete a character at the cursor
+  | Clear           -- ^ Clear all contents
   | InsertChar Char -- ^ Insert a character at the cursor
   | InsertText Text -- ^ Insert a string of characters at the cursor
   | NewLine         -- ^ Insert a newline
@@ -46,6 +47,9 @@ handleEditorEvent editorEv (EditorState editor view) = case editorEv of
   DeleteChar
     -> let (nextEditor,mChar) = E.deleteCharacter editor
         in pure $ EditorState nextEditor view
+
+  Clear
+    -> pure $ EditorState (E.makeEditor E.emptyLines) view
 
   InsertChar c
     -> pure $ EditorState (E.insertCharacter c editor) view

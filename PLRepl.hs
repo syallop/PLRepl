@@ -204,7 +204,7 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
              [Vty.MCtrl]
                | c == 'l'
-                -> continue st{_editorState = emptyEditorState}
+                -> liftIO (writeBChan chan . EditorEv $ Clear) >> continue st
 
                | otherwise
                 -> continue st
@@ -220,9 +220,10 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
       Vty.KBS
         -> liftIO (writeBChan chan . EditorEv $ DeleteChar) >> continue st
 
-      -- home => insert a random code fragment in the editor.
+      -- home => Replace the contents of the editor with a random code fragment
       Vty.KHome
         -> do randomCode <- liftIO $ randomExample
+              liftIO (writeBChan chan . EditorEv $ Clear)
               liftIO (writeBChan chan . EditorEv . InsertText $ randomCode)
               continue st
 
@@ -409,8 +410,8 @@ usage =
   , ""
   , "Keys:"
   , "Evaluate       : INS"
-  , "Focus pane     : Pg Up/Down"
   , "Random example : HOME"
+  , "Focus pane     : Pg Up/Down"
   , ""
   , "CTRL+l         : Clear editor"
   , ""
