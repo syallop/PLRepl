@@ -132,11 +132,15 @@ plGrammarParser grammar =
                   -> replError . EMsg . ppParseResult plPrinter $ f
 
                 s@(PLParser.ParseSuccess expr cursor)
-                  | Text.null $ PLParser.remainder cursor
+                  | noTrailingCharacters $ PLParser.remainder cursor
                    -> pure expr
 
                   | otherwise
-                   -> replError $ EMsg $ text "Parse succeeded but there were trailing characters: " <> document cursor
+                   -> replError $ EMsg $ text "Parse succeeded but there were trailing characters: " <> lineBreak <> document cursor
+
+  where
+    noTrailingCharacters :: Text -> Bool
+    noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
 
 ppParseResult
   :: (a -> Doc)
