@@ -59,6 +59,11 @@ import PL.TypeCtx
 import PL.Kind
 import PL.Name
 
+import PL.Test.Source
+import qualified PL.Test.Expr as Test
+import qualified PL.Test.ExprTestCase as Test
+import qualified PLLispy.Test.Sources.Expr as Test
+
 import PLGrammar
 
 import PLPrinter
@@ -400,44 +405,16 @@ usage =
   , "Exit       : ESC"
   ]
 
--- Generate random example code
+-- Generate random example from the Lispy implementation of the PL test cases
 randomExample :: IO Text
 randomExample = do
-  let exampleNames = Map.keys examples
+  let exampleNames = Map.keys exampleLispyTestCases
       nExamples    = length exampleNames
   randomIndex <- randomRIO (0,nExamples - 1)
   let randomName = exampleNames !! randomIndex
-      Just randomCode = Map.lookup randomName examples
-  return randomCode
+      Just randomTestCase = Map.lookup randomName exampleLispyTestCases
+  return . Test._parsesFrom $ randomTestCase
 
-examples :: Map Text Text
-examples = Map.fromList
-  [ ("boolean identity function"
-    ,"\\Bool 0"
-    )
-
-  , ("subtract two"
-    ,"\\Nat (CASE 0\n\
-     \          (| (+1 (+1 ?)) 0)\n\
-     \          (+0 (*) (*) Nat)\n\
-     \      )"
-    )
-
-  , ("boolean and"
-    ,"\\Bool (\\Bool (CASE 0\n\
-     \                 (\n\
-     \                   (|(+0 (*)) (+0 (*) (*) (*)))\n\
-     \                 )\n\
-     \                 (CASE 1\n\
-     \                   (\n\
-     \                     (|(+0 (*)) (+0 (*) (*) (*)))\n\
-     \                   )\n\
-     \                   (\n\
-     \                     (+1 (*) (*) (*))\n\
-     \                   )\n\
-     \                 )\n\
-     \               )\n\
-     \       )"
-   )
-  ]
+exampleLispyTestCases :: Map Text Test.ExprTestCase
+exampleLispyTestCases = Map.fromList $ Test.testCases Test.sources
 
