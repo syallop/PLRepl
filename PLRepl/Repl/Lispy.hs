@@ -67,7 +67,7 @@ lispyExprReplConfig
      , Abstracts abs tb
      , o ~ Expr b abs tb
      )
-  => (Grammar o -> Text -> Repl b abs tb o o)
+  => (Text -> Repl b abs tb o o)
   -> Grammar b
   -> Grammar abs
   -> Grammar tb
@@ -91,7 +91,7 @@ lispyTypeReplConfig
      , Abstracts abs tb
      , o ~ Type tb
      )
-  => (Grammar o -> Text -> Repl b abs tb o o)
+  => (Text -> Repl b abs tb o o)
   -> Grammar tb
   -> ReplConfig b abs tb (Type tb)
 lispyTypeReplConfig grammarParser tb = ReplConfig
@@ -109,7 +109,7 @@ lispyTypeReplConfig grammarParser tb = ReplConfig
 -- | Read a Grammar with some Parser, report errors but otherwise do nothing.
 readOnlyConfig
   :: Grammar o
-  -> (forall o. Grammar o -> Text -> Repl b abs tb o o)
+  -> (Text -> Repl b abs tb o o)
   -> ReplConfig b abs tb o
 readOnlyConfig grammar grammarParser = ReplConfig
   { _someGrammar = grammar
@@ -121,15 +121,15 @@ readOnlyConfig grammar grammarParser = ReplConfig
 
 -- Convert a Grammar to a parser using PLParser.
 plGrammarParser
-  :: (o -> Doc)
-  -> Grammar o
+  :: Grammar o
   -> Text
   -> Repl b abs tb o o
-plGrammarParser pp grammar =
+plGrammarParser grammar =
   let plParser = toParser grammar
+      plPrinter = fromMaybe mempty . pprint (toPrinter grammar)
    in \txt -> case PLParser.runParser plParser txt of
                 f@(PLParser.ParseFailure expected cursor)
-                  -> replError . EMsg . ppParseResult pp $ f
+                  -> replError . EMsg . ppParseResult plPrinter $ f
 
                 s@(PLParser.ParseSuccess expr cursor)
                   | Text.null $ PLParser.remainder cursor

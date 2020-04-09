@@ -140,15 +140,20 @@ initialState initialFocus usage = State
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
-    exprPrinter :: Expr Var (Type TyVar) TyVar -> Doc
-    exprPrinter = fromMaybe mempty . pprint (toPrinter $ expr var (typ tyVar) tyVar)
+    exprGrammar :: G.Grammar (Expr Var (Type TyVar) TyVar)
+    exprGrammar = expr var (typ tyVar) tyVar
 
     exprConfig :: ReplConfig Var (Type TyVar) TyVar (Expr Var (Type TyVar) TyVar)
-    exprConfig = lispyExprReplConfig (plGrammarParser exprPrinter) var (typ tyVar) tyVar
+    exprConfig = lispyExprReplConfig (plGrammarParser exprGrammar) var (typ tyVar) tyVar
 
     typePrinter :: Type TyVar -> Doc
     typePrinter = fromMaybe mempty . pprint (toPrinter $ typ tyVar)
-    typeConfig = lispyTypeReplConfig (plGrammarParser typePrinter) tyVar
+
+    typeGrammar :: G.Grammar (Type TyVar)
+    typeGrammar = typ tyVar
+
+    typeConfig :: ReplConfig Var (Type TyVar) TyVar (Type TyVar)
+    typeConfig = lispyTypeReplConfig (plGrammarParser typeGrammar) tyVar
 
       where
     initialReplConfigs :: Map GrammarName (SomeReplConfig Var (Type TyVar) TyVar)

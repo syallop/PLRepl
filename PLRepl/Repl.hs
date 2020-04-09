@@ -86,7 +86,7 @@ import Prelude hiding (Read)
 
 -- | A Read function takes a Grammar on 'o' and attempts to parse text into an
 -- 'o'.
-type Read b abs tb o = Grammar o -> Text -> Repl b abs tb o o
+type Read b abs tb o = Text -> Repl b abs tb o o
 
 -- | An Eval function transforms some value 'o'. Into a Repl function which may
 -- succeed with a new expression along with its type.
@@ -117,8 +117,8 @@ emptyReplConfig
   :: ReplConfig b abs tb o
 emptyReplConfig = ReplConfig
   { _someGrammar = rempty -- The Grammar that always fails.
-  , _read        = \_ _ -> replError $ EMsg $ text "No read function defined in replConfig"
-  , _eval        = \_   -> replError $ EMsg $ text "No eval function defined in replConfig"
+  , _read        = \_ -> replError $ EMsg $ text "No read function defined in replConfig"
+  , _eval        = \_ -> replError $ EMsg $ text "No eval function defined in replConfig"
   , _print       = \_ _ _ -> replError $ EMsg $ text "No print function defined in replConfig"
   }
 
@@ -239,12 +239,10 @@ replEvalSimple expr = do
 
 -- | Feed read text into the Repls configured read function.
 replRead
-  :: Text
-  -> Repl b abs tb o o
+  :: Read b abs tb o
 replRead input = Repl $ \replState ->
   let readF      = _read . _replConfig $ replState
-      grammar    = _someGrammar . _replConfig $ replState
-      Repl replF = readF grammar input
+      Repl replF = readF input
     in replF replState
 
 replEval
