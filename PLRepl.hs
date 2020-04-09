@@ -199,7 +199,10 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
       -- any character => insert that character in the editor.
       -- TODO: Should this still happen when another widget has focus?
       Vty.KChar c
-        -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
+        -> case modifiers of
+             []
+               -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
+             _ -> continue st
 
       -- delete => delete a character in the editor.
       -- TODO: Should this still happen when another widget has focus?
