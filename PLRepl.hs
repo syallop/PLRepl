@@ -202,6 +202,13 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
         -> case modifiers of
              []
                -> liftIO (writeBChan chan . EditorEv . InsertChar $ c) >> continue st
+             [Vty.MCtrl]
+               | c == 'l'
+                -> continue st{_editorState = emptyEditorState}
+
+               | otherwise
+                -> continue st
+
              _ -> continue st
 
       -- delete => delete a character in the editor.
@@ -405,7 +412,9 @@ usage =
   , "Focus pane     : Pg Up/Down"
   , "Random example : HOME"
   , ""
-  , "Exit       : ESC"
+  , "CTRL+l         : Clear editor"
+  , ""
+  , "Exit           : ESC"
   ]
 
 -- Generate random example from the Lispy implementation of the PL test cases

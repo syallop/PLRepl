@@ -63,6 +63,7 @@ Below is an overview of some of the commands the repl understands.
 | `INSERT`              | editor, output | Grab the text in the editor and run it through the configured repl. This usually means parsing, type-checking and evaluating. Output appears in the output widget. If successful, the editor widget is cleared | 
 | `PAGE-UP`             | global         | Switch focus to the next widget |
 | `PAGE-DOWN`           | global         | Switch focus to the previous widget |
+| `ctrl + l`            | editor         | Clear all text from the editor widget |
 | `ESC`                 | global         | Exit the program |
 
 ### Examples
