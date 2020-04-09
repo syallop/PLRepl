@@ -7,7 +7,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/syallop/PL
-    commit: 528db1a8918270a7c8c1c8107494ec05a0b02d8c
+    commit: 79db66778274f3e300460bc74d41f07637a01a62
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLEditor
