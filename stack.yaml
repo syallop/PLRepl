@@ -15,7 +15,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLLispy
-    commit: d7b493edd926a916d88cf36b2ea1cf0651fa7f55
+    commit: 20d0a4d52ebb18434cb683693c2f1e77e596a3f5
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLParser
@@ -23,7 +23,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLGrammar
-    commit: a402b40fca2aaabe66f040857465c3233344827f
+    commit: ec9f0d5bf5bd9c8c01c05b1a53d9ab7785f288c1
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLPrinter
