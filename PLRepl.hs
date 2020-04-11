@@ -397,7 +397,14 @@ main = run
 run :: IO ()
 run = do
   -- Buffer events
-  evChan <- newBChan 10
+  -- Hitting the buffer causes a STM lock up.
+  -- TODO:
+  -- - Investigate this
+  -- - In particular the buffer is only this high to allow:
+  --   - Bursts of scroll events
+  --   - Pasting small lines. Ideally paste events would be handled as one event
+  --     rather than as an event to insert each individual character.
+  evChan <- newBChan 1024
   void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) (initialState (Just EditorCursor) usage)
 
 usage :: [Text]

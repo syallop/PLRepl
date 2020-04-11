@@ -7,7 +7,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/syallop/PL
-    commit: c5c4ed1ca29728edb670064e1f0b43c07c654ae1
+    commit: 1bcb46db07fc17f061e17af05adda35e9b8d3ca4
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLEditor
@@ -15,7 +15,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLLispy
-    commit: c376585f90e53401480f4f1b551282cc432dad38
+    commit: d7b493edd926a916d88cf36b2ea1cf0651fa7f55
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLParser
@@ -23,7 +23,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLGrammar
-    commit: 4a56e0cb09cd2bc5044625bfee2f7ff5393f749b
+    commit: a402b40fca2aaabe66f040857465c3233344827f
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLPrinter
@@ -31,7 +31,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/Reversible
-    commit: 5185a10559f0567ba927ea67a0b90f446d87dbe3
+    commit: 84188a89af962716dc0534d552da715305cb0cf5
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLLabel
