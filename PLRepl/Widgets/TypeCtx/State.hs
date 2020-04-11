@@ -30,6 +30,7 @@ import Brick
 
 import qualified Data.Map as Map
 import qualified Data.Text as Text
+import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
 
 type TypeCtxState = EditorState
@@ -147,7 +148,7 @@ ppError tb e = case e of
     -> mconcat [ PLPrinter.text "Expression had type: "
                , ppType tb actualType
                , PLPrinter.text "and claimed to be contained within the sum"
-               , mconcat . fmap (ppType tb) $ sumTys
+               , mconcat . NE.toList . fmap (ppType tb) $ sumTys
                , PLPrinter.text "at index"
                , document index
                ]

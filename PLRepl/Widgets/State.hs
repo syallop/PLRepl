@@ -65,6 +65,8 @@ import qualified Data.Text as Text
 import Data.Map (Map)
 import qualified Data.Map as Map
 
+import qualified Data.List.NonEmpty as NE
+
 import Data.Text (Text)
 import Data.Char
 
@@ -134,9 +136,9 @@ initialState initialFocus usage = State
                                     exprBindCtx
                                     typeBindCtx
                                     typeBindings
-            $ fromJust $ insertType "Bool" (fixType $ SumT $ map fixType $ [ProductT [], ProductT []])
-            $ fromJust $ insertRecType "Nat" (fixType $ SumT $ map fixType $ [ProductT [], Named "Nat"])
-            $ fromJust $ insertType "Unit" (fixType $ SumT []) typeCtx
+            $ fromJust $ insertType "Bool" (fixType $ SumT $ fmap fixType $ NE.fromList $ [ProductT [], ProductT []])
+            $ fromJust $ insertRecType "Nat" (fixType $ SumT $ fmap fixType $ NE.fromList $ [ProductT [], Named "Nat"])
+            $ fromJust $ insertType "Unit" (fixType $ ProductT []) typeCtx
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
