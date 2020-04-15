@@ -25,6 +25,7 @@ import PLGrammar
 import PLPrinter (Doc, document, pprint)
 import PLPrinter.Doc
 import PLLispy
+import PLLispy.Level
 
 import Brick
 
@@ -84,7 +85,7 @@ ppTypeInfo tb (TypeInfo isRecursive kind def) = mconcat
     ]
 
 ppType :: (Show tb, Ord tb) => Grammar tb -> Type tb -> Doc
-ppType tb t = fromMaybe mempty $ pprint (toPrinter (typ tb)) t
+ppType tb t = fromMaybe mempty $ pprint (toPrinter (top $ typ tb)) t
 
 ppRec :: Rec -> Doc
 ppRec r = PLPrinter.text $ case r of

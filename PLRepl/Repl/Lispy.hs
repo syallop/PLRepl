@@ -7,6 +7,7 @@
   , UndecidableInstances
   , TypeSynonymInstances
   , FlexibleInstances
+  , ImplicitParams
   #-}
 {-|
 Module      : PLRepl.Repl
@@ -28,6 +29,7 @@ module PLRepl.Repl.Lispy
 
 import PL.Expr
 import PLLispy
+import PLLispy.Level
 import PLGrammar
 import PLPrinter
 import PLRepl.Repl
@@ -72,12 +74,16 @@ lispyExprReplConfig
   -> Grammar abs
   -> Grammar tb
   -> ReplConfig b abs tb (Expr b abs tb)
-lispyExprReplConfig grammarParser b abs tb = ReplConfig
-  { _someGrammar = expr b abs tb               -- The expr grammar with supplied sub-grammars.
-  , _read        = grammarParser               -- Supplied read function
-  , _eval        = replEvalSimple              -- Use default eval function
-  , _print       = printerF (fromMaybe mempty . pprint (toPrinter $ typ tb)) -- aand a printer we define on the supplied sub-grammars.
-  }
+lispyExprReplConfig grammarParser b abs tb =
+  let ?eb  = b
+      ?abs = abs
+      ?tb  = tb
+   in ReplConfig
+        { _someGrammar = top $ expr b abs tb
+        , _read        = grammarParser
+        , _eval        = replEvalSimple
+        , _print       = printerF (fromMaybe mempty . pprint (toPrinter $ top $ typ tb))
+        }
 
 lispyTypeReplConfig
   :: ( Show b
@@ -95,14 +101,14 @@ lispyTypeReplConfig
   -> Grammar tb
   -> ReplConfig b abs tb (Type tb)
 lispyTypeReplConfig grammarParser tb = ReplConfig
-  { _someGrammar = typ tb
+  { _someGrammar = sub $ typ tb
   , _read        = grammarParser
   , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
                                       -- expressions. We currently dont support defining new types.
   , _print       = \_inputTxt parsedTy Nothing -> pure . mconcat $
                      [ text "parsed type:"
                      , lineBreak
-                     , fromMaybe mempty $ pprint (toPrinter (typ tb)) parsedTy
+                     , fromMaybe mempty $ pprint (toPrinter $ sub $ typ tb) parsedTy
                      ]
   }
 

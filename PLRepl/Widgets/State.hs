@@ -52,6 +52,7 @@ import PL.TypeCtx
 import PL.Var
 
 import PLLispy
+import PLLispy.Level
 
 import qualified PLGrammar as G
 
@@ -143,16 +144,16 @@ initialState initialFocus usage = State
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
     exprGrammar :: G.Grammar (Expr Var (Type TyVar) TyVar)
-    exprGrammar = expr var (typ tyVar) tyVar
+    exprGrammar = top $ expr var (sub $ typ tyVar) tyVar
 
     exprConfig :: ReplConfig Var (Type TyVar) TyVar (Expr Var (Type TyVar) TyVar)
-    exprConfig = lispyExprReplConfig (plGrammarParser exprGrammar) var (typ tyVar) tyVar
+    exprConfig = lispyExprReplConfig (plGrammarParser exprGrammar) var (sub $ typ tyVar) tyVar
 
     typePrinter :: Type TyVar -> Doc
-    typePrinter = fromMaybe mempty . pprint (toPrinter $ typ tyVar)
+    typePrinter = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar)
 
     typeGrammar :: G.Grammar (Type TyVar)
-    typeGrammar = typ tyVar
+    typeGrammar = top $ typ tyVar
 
     typeConfig :: ReplConfig Var (Type TyVar) TyVar (Type TyVar)
     typeConfig = lispyTypeReplConfig (plGrammarParser typeGrammar) tyVar
