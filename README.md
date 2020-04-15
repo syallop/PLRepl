@@ -32,7 +32,7 @@ If installed globally, call `pl`. If built locally, call `stack exec pl`.
 Launching the `pl` executable creates a [brick](https://hackage.haskell.org/package/brick)-based
 command line interface split into several panes.
 
-![Overview](https://github.com/syallop/PLRepl/blob/master/README/Overview.gif) 
+![Overview](https://github.com/syallop/PLRepl/blob/master/README/Overview.svg)
 - The top-left `widget` is an [PLEditor](https://github.com/syallop/PLEditor)-based editor for inputing [lispy](https://github.com/syallop/PLLispy) source code.
 - The bottom-left widget is an output text area that displays the result of parsing/ type checking code entered into the editor widget. 
 - The right widget displays a context of the types currently defined and available to be mentioned in the editor.  
@@ -72,8 +72,8 @@ Below are a couple of example functions, rendered with printing in a broken
 state...
 
 Boolean and:
-![Boolean And](https://github.com/syallop/PLRepl/blob/master/README/BooleanAnd.png) 
+![Boolean And](https://github.com/syallop/PLRepl/blob/master/README/BooleanAnd.svg)
 
 Subtracting two from a natural number:
-![Subtract Two](https://github.com/syallop/PLRepl/blob/master/README/SubTwo.png)
+![Subtract Two](https://github.com/syallop/PLRepl/blob/master/README/SubTwo.svg)
 
