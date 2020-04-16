@@ -6,7 +6,7 @@ extra-package-dbs: []
 packages:
 - '.'
 - location:
-    git: https://github.com/syallop/PL
+    git: https://github.com/syallop/PLCore
     commit: 8cf2f2b91a3235458703fd55931925ddfa2852d1
   extra-dep: true
 - location:
@@ -15,7 +15,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLLispy
-    commit: 676dbba4c71f3be71fdcb60bf09847853887773c
+    commit: 2d49df616d675cb61780e11daea66713ddd2568d
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLParser
@@ -23,7 +23,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLGrammar
-    commit: ec9f0d5bf5bd9c8c01c05b1a53d9ab7785f288c1
+    commit: 8583dfc6b56b88069fee00b9786da6f15f6d4cd0
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLPrinter
