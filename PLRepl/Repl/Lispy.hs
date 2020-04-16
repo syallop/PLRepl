@@ -85,6 +85,11 @@ lispyExprReplConfig grammarParser b abs tb =
         , _print       = printerF (fromMaybe mempty . pprint (toPrinter $ top $ typ tb))
         }
 
+-- | A ReplConfig for type signatures parameterised over a Grammar for type
+-- bindings and accepting a custom Read function to transform Grammars into parsers.
+--
+-- 'plGrammarParser' and 'megaparsecGrammarParser' are exported and can be used
+-- here.
 lispyTypeReplConfig
   :: ( Show b
      , Show abs
