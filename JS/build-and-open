@@ -1,0 +1,7 @@
+#! /bin/bash
+set -eou pipefail
+
+nix-build
+
+firefox result/bin/app.jsexe/index.html
+
