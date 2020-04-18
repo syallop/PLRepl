@@ -3,7 +3,6 @@ module PLRepl.Widgets.TypeCtx.State
   ( TypeCtxState
   , emptyTypeCtxState
   , newTypeCtxState
-  , drawTypeCtx
   , typeCtxText
 
   , ppTypeCtx
@@ -27,8 +26,6 @@ import PLPrinter.Doc
 import PLLispy
 import PLLispy.Level
 
-import Brick
-
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.List.NonEmpty as NE
@@ -43,19 +40,6 @@ newTypeCtxState
   :: [Text.Text]
   -> TypeCtxState
 newTypeCtxState lines = EditorState (E.makeEditor $ foldr E.prependLine E.emptyLines $ map E.textLine lines) (E.tallerView 30 $ E.widerView 1024 $ E.emptyView)
-
-drawTypeCtx
-  :: n
-  -> TypeCtxState
-  -> Widget n
-drawTypeCtx typeCtxCursor (EditorState editor view) =
-  (\(lines,pos) -> Brick.showCursor typeCtxCursor (Location pos) . txtWrap
-                                                                 . Text.unlines
-                                                                 . map E.lineText
-                                                                 . E.renderLines
-                                                                 $ lines
-  ) . E.viewEditor view
-    $ editor
 
 typeCtxText
   :: TypeCtxState

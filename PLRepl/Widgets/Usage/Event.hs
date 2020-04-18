@@ -1,19 +1,17 @@
 module PLRepl.Widgets.Usage.Event
   ( UsageEvent
-  , handleUsageEvent
+  , handleUsageEventDefault
   )
   where
 
 import PLRepl.Widgets.Usage.State
 import PLRepl.Widgets.Output.Event
 
-import Brick
-
 type UsageEvent = OutputEvent
 
-handleUsageEvent
+handleUsageEventDefault
   :: UsageEvent
   -> UsageState
-  -> EventM n UsageState
-handleUsageEvent = handleOutputEvent
+  -> UsageState
+handleUsageEventDefault = handleOutputEventDefault
 

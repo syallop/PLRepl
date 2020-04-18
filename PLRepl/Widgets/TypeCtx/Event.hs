@@ -1,19 +1,18 @@
 module PLRepl.Widgets.TypeCtx.Event
   ( TypeCtxEvent
-  , handleTypeCtxEvent
+  , handleTypeCtxEventDefault
   )
   where
 
 import PLRepl.Widgets.TypeCtx.State
 import PLRepl.Widgets.Output.Event
 
-import Brick
 
 type TypeCtxEvent = OutputEvent
 
-handleTypeCtxEvent
+handleTypeCtxEventDefault
   :: TypeCtxEvent
   -> TypeCtxState
-  -> EventM n TypeCtxState
-handleTypeCtxEvent = handleOutputEvent
+  -> TypeCtxState
+handleTypeCtxEventDefault = handleOutputEventDefault
 

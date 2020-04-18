@@ -8,18 +8,15 @@ module PLRepl.Widgets.State
   ( State (..)
   , EditorState (..)
   , initialState
-  , drawEditor
   , editorText
   , emptyEditorState
 
   , OutputState
-  , drawOutput
   , outputText
   , emptyOutputState
   , newOutputState
 
   , TypeCtxState
-  , drawTypeCtx
   , typeCtxText
   , emptyTypeCtxState
   , newTypeCtxState
@@ -28,7 +25,6 @@ module PLRepl.Widgets.State
   , ppError
 
   , UsageState
-  , drawUsage
   , usageText
   , emptyUsageState
   , newUsageState
@@ -59,7 +55,6 @@ import qualified PLGrammar as G
 import PLPrinter
 import qualified PLEditor as E
 
-import Brick
 import Data.Maybe
 import qualified Data.Text as Text
 

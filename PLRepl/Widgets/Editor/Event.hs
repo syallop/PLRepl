@@ -1,13 +1,11 @@
 module PLRepl.Widgets.Editor.Event
   ( EditorEvent (..)
-  , handleEditorEvent
+  , handleEditorEventDefault
   )
   where
 
 import PLRepl.Widgets.Editor.State
 import qualified PLEditor as E
-
-import Brick
 
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -26,43 +24,43 @@ data EditorEvent
   | WiderView Int   -- ^ Widen (or contract) the width of the viewport
   | TallerView Int  -- ^ Tallen (or shorten) the height of the viewport
 
--- | Handle editor specific events.
-handleEditorEvent
+-- Transform the Editor state in response to editor specific events.
+handleEditorEventDefault
   :: EditorEvent
   -> EditorState
-  -> EventM n EditorState
-handleEditorEvent editorEv (EditorState editor view) = case editorEv of
+  -> EditorState
+handleEditorEventDefault editorEv (EditorState editor view) = case editorEv of
   CursorLeft
-    -> pure $ EditorState (E.tryMoveLeft editor) view
+    -> EditorState (E.tryMoveLeft editor) view
 
   CursorRight
-    -> pure $ EditorState (E.tryMoveRight editor) view
+    -> EditorState (E.tryMoveRight editor) view
 
   CursorUp
-    -> pure $ EditorState (E.tryMoveUp editor) view
+    -> EditorState (E.tryMoveUp editor) view
 
   CursorDown
-    -> pure $ EditorState (E.tryMoveDown editor) view
+    -> EditorState (E.tryMoveDown editor) view
 
   DeleteChar
     -> let (nextEditor,mChar) = E.deleteCharacter editor
-        in pure $ EditorState nextEditor view
+        in EditorState nextEditor view
 
   Clear
-    -> pure $ EditorState (E.makeEditor E.emptyLines) view
+    -> EditorState (E.makeEditor E.emptyLines) view
 
   InsertChar c
-    -> pure $ EditorState (E.insertCharacter c editor) view
+    -> EditorState (E.insertCharacter c editor) view
 
   InsertText txt
-    -> pure $ EditorState (Text.foldl (\e c -> if c == '\n' then E.newline e else E.insertCharacter c e) editor txt) view
+    -> EditorState (Text.foldl (\e c -> if c == '\n' then E.newline e else E.insertCharacter c e) editor txt) view
 
   NewLine
-    -> pure $ EditorState (E.newline editor) view
+    -> EditorState (E.newline editor) view
 
   WiderView i
-    -> pure $ EditorState editor (E.widerView i view)
+    -> EditorState editor (E.widerView i view)
 
   TallerView i
-    -> pure $ EditorState editor (E.tallerView i view)
+    -> EditorState editor (E.tallerView i view)
 

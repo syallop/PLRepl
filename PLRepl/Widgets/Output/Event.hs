@@ -1,18 +1,17 @@
 module PLRepl.Widgets.Output.Event
   ( OutputEvent
-  , handleOutputEvent
+  , handleOutputEventDefault
   )
   where
 
 import PLRepl.Widgets.Output.State
 import PLRepl.Widgets.Editor.Event
-import Brick
 
 type OutputEvent = EditorEvent
 
-handleOutputEvent
+handleOutputEventDefault
   :: OutputEvent
   -> OutputState
-  -> EventM n OutputState
-handleOutputEvent = handleEditorEvent
+  -> OutputState
+handleOutputEventDefault = handleEditorEventDefault
 

@@ -1,16 +1,16 @@
 module PLRepl.Widgets.Event
   ( Event (..)
   , EditorEvent (..)
-  , handleEditorEvent
+  , handleEditorEventDefault
 
   , OutputEvent
-  , handleOutputEvent
+  , handleOutputEventDefault
 
   , TypeCtxEvent
-  , handleTypeCtxEvent
+  , handleTypeCtxEventDefault
 
   , UsageEvent
-  , handleUsageEvent
+  , handleUsageEventDefault
   )
   where
 

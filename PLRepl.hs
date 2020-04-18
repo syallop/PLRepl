@@ -69,6 +69,8 @@ import PLGrammar
 import PLPrinter
 import PLPrinter.Doc
 
+import qualified PLEditor as E
+
 import Brick
 import Brick.BChan
 import Brick.Widgets.Border
@@ -136,20 +138,20 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
 
     -- An event to the editor
     PL.EditorEv editorEv
-      -> do editorSt' <- handleEditorEvent editorEv editorSt
-            continue (PL.State someReplState replConfigs editorSt' outputSt typeCtxSt usageSt focus)
+      -> let editorSt' = handleEditorEventDefault editorEv editorSt
+          in continue (PL.State someReplState replConfigs editorSt' outputSt typeCtxSt usageSt focus)
 
     PL.OutputEv outputEv
-      -> do outputSt' <- handleOutputEvent outputEv outputSt
-            continue (PL.State someReplState replConfigs editorSt outputSt' typeCtxSt usageSt focus)
+      -> let outputSt' = handleOutputEventDefault outputEv outputSt
+          in continue (PL.State someReplState replConfigs editorSt outputSt' typeCtxSt usageSt focus)
 
     PL.TypeCtxEv typeCtxEv
-      -> do typeCtxSt' <- handleTypeCtxEvent typeCtxEv typeCtxSt
-            continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt' usageSt focus)
+      -> let typeCtxSt' = handleTypeCtxEventDefault typeCtxEv typeCtxSt
+          in continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt' usageSt focus)
 
     PL.UsageEv usageEv
-      -> do usageSt' <- handleUsageEvent usageEv usageSt
-            continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt usageSt' focus)
+      -> let usageSt' = handleUsageEventDefault usageEv usageSt
+          in continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt usageSt' focus)
 
     PL.FocusOn n
       -> continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt usageSt n)
@@ -391,6 +393,60 @@ drawUI st =
           $ padBottom Max
           $ drawUsage UsageCursor (_usageState st)
 
+    -- | Draw editor state as a widget with a cursor 'n'.
+    -- Text that overflows the line will be cut off rather than wrapping.
+    -- TODO: Extend the widget to scroll the editors view.
+    drawEditor
+      :: n
+      -> EditorState
+      -> Widget n
+    drawEditor editorCursor (EditorState editor view) =
+      (\(lines,pos) -> Brick.showCursor editorCursor (Location pos) . txt
+                                                                    . Text.unlines
+                                                                    . map E.lineText
+                                                                    . E.renderLines
+                                                                    $ lines
+      ) . E.viewEditor view
+        $ editor
+
+    drawOutput
+      :: n
+      -> OutputState
+      -> Widget n
+    drawOutput = drawEditor
+
+    drawTypeCtx
+      :: n
+      -> TypeCtxState
+      -> Widget n
+    drawTypeCtx typeCtxCursor (EditorState editor view) =
+      (\(lines,pos) -> Brick.showCursor typeCtxCursor (Location pos) . txtWrap
+                                                                     . Text.unlines
+                                                                     . map E.lineText
+                                                                     . E.renderLines
+                                                                     $ lines
+      ) . E.viewEditor view
+        $ editor
+
+    -- Text that overflows the line will be wrapped by Brick. This means:
+    -- - The containing widget must limit its horizontal length
+    -- - The editors viewport remains the limit on how long a line will be wrapped
+    -- before giving up.
+    -- - TODO: Add wrapping logic to the Editor
+    drawUsage
+      :: n
+      -> UsageState
+      -> Widget n
+    drawUsage usageCursor (EditorState editor view) =
+      (\(lines,pos) -> Brick.showCursor usageCursor (Location pos) . txtWrap
+                                                                   . Text.unlines
+                                                                   . map E.lineText
+                                                                   . E.renderLines
+                                                                   $ lines
+      ) . E.viewEditor view
+        $ editor
+
+
 main :: IO ()
 main = run
 
@@ -437,4 +493,5 @@ randomExample = do
 
 exampleLispyTestCases :: Map Text Test.ExprTestCase
 exampleLispyTestCases = Map.fromList $ Test.testCases Test.sources
+
 
