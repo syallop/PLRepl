@@ -7,7 +7,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/syallop/PLCore
-    commit: 8cf2f2b91a3235458703fd55931925ddfa2852d1
+    commit: dc9b603e4afa54610db14df2bfeeb33ee2808f24
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLEditor
