@@ -1,7 +1,7 @@
 name:                PLRepl
 version:             0.1.0.0
 synopsis:            A Repl for PL
-description:         A REPL for PL built with Brick and Haskeline.
+description:         Datastructures for a REPL for PL
 author:              Samuel A. Yallop
 maintainer:          syallop@gmail.com
 copyright:           Samuel A. Yallop
@@ -60,33 +60,3 @@ library
 
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
 
--- Use our input/ output widgets to drive a Terminal User Interface REPL with
--- use of Brick
-executable pl
-  main-is:             PLRepl.hs
-
-  build-depends:       base >= 4.12
-
-                     , PLRepl
-                     , PL         >= 0.1
-                     , PLEditor   >= 0.1
-                     , PLGrammar  >= 0.4
-                     , PLLabel    >= 0.1
-                     , PLLispy    >= 0.2
-                     , PLParser   >= 0.1
-                     , PLPrinter  >= 0.3
-                     , Reversible >= 0.1
-
-                     , brick
-                     , containers
-                     , directory
-                     , megaparsec
-                     , mtl
-                     , text
-                     , transformers
-                     , random
-                     , vty
-
-  default-language:    Haskell2010
-
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N

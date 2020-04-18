@@ -4,7 +4,8 @@ flags:
     brick: true
 extra-package-dbs: []
 packages:
-- '.'
+- './Terminal'
+- './Lib'
 - location:
     git: https://github.com/syallop/PLCore
     commit: dc9b603e4afa54610db14df2bfeeb33ee2808f24
