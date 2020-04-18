@@ -1,0 +1,4 @@
+#! /bin/bash
+set -eou pipefail
+
+nix-build JS/

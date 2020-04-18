@@ -1,0 +1,5 @@
+#! /bin/bash
+set -eou pipefail
+
+script/build-js
+script/build-terminal
