@@ -66,6 +66,7 @@ data Event n
   = PLEvent (PL.Event n)
   | NoOp
   | ReplaceEditorText Text
+  | RandomExpression
   | ReadEvalPrint
 
 main :: IO ()
@@ -107,6 +108,11 @@ handleEvent ev (State st) = case ev of
 
   ReplaceEditorText txt
     -> noEff $ State $ st{PL._editorState = handleEditorEventDefault (InsertText txt ). handleEditorEventDefault Clear . PL._editorState $ st}
+
+  RandomExpression
+    -> (State st) <# do
+         txt <- randomExample
+         pure $ ReplaceEditorText txt
 
   ReadEvalPrint
     -> let txt  = PL.editorText . PL._editorState $ st
@@ -180,6 +186,11 @@ drawUI (State st) = div_ [] $
   , div_
       [id_ "editor-form"]
       [ drawEditor EditorCursor (PL._editorState st)
+      , input_
+          [ type_ "submit"
+          , value_ "Random expression"
+          , onClick RandomExpression
+          ]
       , input_
           [ type_  "submit"
           , value_ "Evaluate"
