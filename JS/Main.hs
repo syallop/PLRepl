@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ImplicitParams #-}
 
 -- | Haskell module declaration
 module Main where
@@ -19,13 +20,18 @@ import qualified PL.Type as PL
 import PL.Type hiding (Type)
 
 import PLRepl.Repl
+import PLRepl.Repl.Lispy
 import qualified PLRepl.Widgets.State as PL
 import PLRepl.Widgets.Name
-import PLRepl.Widgets.Event
+
+import PLRepl.Widgets.Event hiding (Event)
+import qualified PLRepl.Widgets.Event as PL
 
 import qualified PL.Test.Expr as Test
 import qualified PL.Test.ExprTestCase as Test
 import qualified PLLispy.Test.Sources.Expr as Test
+
+import PLLispy
 
 import PL.Var
 import PL.TyVar
@@ -33,6 +39,9 @@ import PL.FixExpr
 import PL.FixType
 
 import qualified PLEditor as E
+
+import qualified PLPrinter
+
 
 -- Other dependencies
 import Data.Text (Text)
@@ -53,6 +62,12 @@ newtype State n = State (PL.State n)
 instance Eq (State n) where
  _ == _ = False
 
+data Event n
+  = PLEvent (PL.Event n)
+  | NoOp
+  | ReplaceEditorText Text
+  | ReadEvalPrint
+
 main :: IO ()
 main = run App{..}
   where
@@ -61,7 +76,7 @@ main = run App{..}
 
     -- Executed on application load
     initialAction :: Event Name
-    initialAction = EditorEv . InsertText . Test._parsesFrom . snd . (!! 0) . Map.toList $ exampleLispyTestCases
+    initialAction = PLEvent . EditorEv . InsertText . Test._parsesFrom . snd . (!! 0) . Map.toList $ exampleLispyTestCases
 
     model :: State Name
     model = State $ PL.initialState (Just EditorCursor) usage
@@ -87,46 +102,181 @@ main = run App{..}
 -- | Transform the state in response to an event with optional side effects.
 handleEvent :: Event Name -> State Name -> Effect (Event Name) (State Name)
 handleEvent ev (State st) = case ev of
-  -- Replace the entire repl state
-  ReplaceReplState someReplState'
-   -> noEff $ State $ st{PL._replState = someReplState'}
+  NoOp
+    -> noEff $ State $ st
 
-  -- An event for the editor
-  EditorEv editorEv
-   -> noEff $ State $ st{PL._editorState = handleEditorEventDefault editorEv $ PL._editorState st}
+  ReplaceEditorText txt
+    -> noEff $ State $ st{PL._editorState = handleEditorEventDefault (InsertText txt ). handleEditorEventDefault Clear . PL._editorState $ st}
 
-  -- An event for the output
-  OutputEv outputEv
-   -> noEff $ State $ st{PL._outputState = handleOutputEventDefault outputEv $ PL._outputState st}
+  ReadEvalPrint
+    -> let txt  = PL.editorText . PL._editorState $ st
+           (someReplState',eRes) = case PL._replState st of
+                                     SomeReplState replState
+                                       -> let step = replStep txt
+                                              (nextState, result) = _unRepl step replState
+                                           in (SomeReplState nextState, result)
+           st' = case eRes of
+             -- Some repl error
+             -- TODO:
+             -- - Printer should be able to render a document to a list
+             --   of lines with and without a DocFmt to prevent
+             --   re-detecting the newlines.
+             -- - The printer should be passed the current width so it
+             --   wraps optimally.
+             -- TODO: Should the typectx state be based upon the replstate after
+             -- failure?
+             Left err
+               -> st{ PL._outputState  = PL.newOutputState $ Text.lines $ (PLPrinter.render . PL.ppError tyVar) err
+                    , PL._typeCtxState = PL.typeCtxStateGivenReplState $ PL._replState st
+                    , PL._focusOn      = Just OutputCursor
+                    }
 
-  -- An event for the type context
-  TypeCtxEv typeCtxEv
-   -> noEff $ State $ st{PL._typeCtxState = handleTypeCtxEventDefault typeCtxEv $ PL._typeCtxState st}
+             -- A Successful parse
+             Right a
+               -> st{ PL._replState    = someReplState'
+                    , PL._editorState  = PL.emptyEditorState
+                    , PL._outputState  = PL.newOutputState $ Text.lines $ PLPrinter.renderDocument a
+                    , PL._typeCtxState = PL.typeCtxStateGivenReplState someReplState'
+                    , PL._focusOn      = Just EditorCursor
+                    }
 
-  -- An event for the usage
-  UsageEv usageEv
-   -> noEff $ State $ st{PL._usageState = handleUsageEventDefault usageEv $ PL._usageState st}
+        in (State st') <# do
+             consoleLog "Output:"
+             consoleLog . ms . Text.unpack . PL.editorText . PL._outputState $ st'
+             pure NoOp
 
-  -- Switch input focus
-  FocusOn n
-   -> noEff $ State $ st{PL._focusOn = n}
+  -- Events to core internal widgets
+  PLEvent plEv
+    -> case plEv of
+         -- Replace the entire repl state
+         ReplaceReplState someReplState'
+          -> noEff $ State $ st{PL._replState = someReplState'}
+
+         -- An event for the editor
+         EditorEv editorEv
+          -> noEff $ State $ st{PL._editorState = handleEditorEventDefault editorEv $ PL._editorState st}
+
+         -- An event for the output
+         OutputEv outputEv
+          -> noEff $ State $ st{PL._outputState = handleOutputEventDefault outputEv $ PL._outputState st}
+
+         -- An event for the type context
+         TypeCtxEv typeCtxEv
+          -> noEff $ State $ st{PL._typeCtxState = handleTypeCtxEventDefault typeCtxEv $ PL._typeCtxState st}
+
+         -- An event for the usage
+         UsageEv usageEv
+          -> noEff $ State $ st{PL._usageState = handleUsageEventDefault usageEv $ PL._usageState st}
+
+         -- Switch input focus
+         FocusOn n
+          -> noEff $ State $ st{PL._focusOn = n}
 
 -- Draw the entire state
 drawUI :: State Name -> View (Event Name)
-drawUI (State st) = div_ [] $ [
-  text "Input:"
-  ] <> [drawEditor EditorCursor (PL._editorState st)]
+drawUI (State st) = div_ [] $
+  [ drawUsage UsageCursor (PL._usageState st)
+  , drawTypeCtx TypeCtxCursor (PL._typeCtxState st)
+  , div_
+      [id_ "editor-form"]
+      [ drawEditor EditorCursor (PL._editorState st)
+      , input_
+          [ type_  "submit"
+          , value_ "Evaluate"
+          , onClick ReadEvalPrint
+          ]
+      , drawOutput OutputCursor (PL._outputState st)
+      ]
+    ]
   where
 
+  -- TODO: Set view to size of output DOM elements/ add scrolling
   drawEditor
     :: Name
     -> PL.EditorState
     -> View (Event Name)
-  drawEditor editorCursor (PL.EditorState editor view) = div_ [] [ text . ms . (\(lines,pos) -> Text.unlines . fmap E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor ]
+  drawEditor _editorCursor (PL.EditorState editor view) =
+    let txt = (\(lines,pos) -> Text.unlines . fmap E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
+     in div_
+          [ id_ "editor"]
+          [ h2_ [] [ text "Editor"]
+          , textarea_
+              [ id_ "editor-input"
+              , autofocus_ True
+              , cols_ "80"
+              , rows_ "20"
+              , onInput (ReplaceEditorText . Text.pack . fromMisoString)
+              ]
+              [ text . ms $ txt]
+          ]
 
+  drawOutput
+    :: Name
+    -> PL.OutputState
+    -> View (Event Name)
+  drawOutput _outputCursor (PL.EditorState editor view) =
+    let txt = (\(lines,pos) -> Text.unlines . fmap E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
+     in div_
+          [ id_ "output"
+          ]
+          [ h2_ [] [ text "Output"]
+          , output_
+             [ id_ "output-text"
+             , for_ "editor-form"
+             ]
+             [ pre_ [] [text . ms $ txt]]
+          ]
+
+  drawTypeCtx
+    :: Name
+    -> PL.TypeCtxState
+    -> View (Event Name)
+  drawTypeCtx _typCtxCursor (PL.EditorState editor view) =
+    let txt = (\(lines,pos) -> Text.unlines . fmap E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
+     in div_
+          [ id_ "type-ctx"
+          ]
+          [ h2_ [] [ text "Type context" ]
+          , p_
+              [ id_ "type-ctx-types"
+              ]
+              [ pre_ [] [text . ms $ txt]]
+          ]
+
+  drawUsage
+    :: Name
+    -> PL.UsageState
+    -> View (Event Name)
+  drawUsage _usageCursor (PL.EditorState editor view) =
+    let txt = (\(lines,_pos) -> Text.unlines . fmap E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
+     in div_
+          [ id_ "usage"
+          ]
+          [ h2_ [] [ text "Usage"]
+          , p_
+              [ id_ "usage"
+              ]
+              [ text "Type PL expressions in the editor (which may reference the built in types) using the Lispy syntax. Evaluating will display in the output pane:"
+              , ul_ []
+                  [ li_ [] [text "Parse errors"]
+                  , li_ [] [text "Type errors"]
+                  , li_ [] [text "The inferred type"]
+                  , li_ [] [text "The reduction"]
+                  ]
+              ]
+          ]
+
+-- TODO: We could share text fragments with the terminal ui if:
+-- - We used PLPrinter Docs
+-- - Defined a render function which renders with <br> rather than newlines
+-- - Taught Doc about bullet points
 usage :: [Text]
 usage =
-  ["Usage"
+  [ "Type PL expressions in the editor (which may reference the built in types) using the Lispy syntax. Evaluating will display in the output pane:"
+  , "- Parse errors"
+  , "- Type errors"
+  , "- The infered type"
+  , "- The reduction"
   ]
 
 -- Generate random example from the Lispy implementation of the PL test cases

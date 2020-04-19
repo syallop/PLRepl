@@ -265,7 +265,7 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                                         replConfigs
                                         editorSt
                                         (newOutputState $ Text.lines $ (PLPrinter.render . ppError tyVar) err)
-                                        (typeCtxStateGivenReplState someReplState)
+                                        (typeCtxStateGivenReplState someReplState) -- someReplState' ?
                                         usageSt
                                         (Just OutputCursor))
 
@@ -276,7 +276,7 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                                            replConfigs
                                            emptyEditorState
                                            (newOutputState $ Text.lines $ renderDocument a)
-                                           (typeCtxStateGivenReplState someReplState)
+                                           (typeCtxStateGivenReplState someReplState')
                                            usageSt
                                            (Just EditorCursor))
 
