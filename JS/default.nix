@@ -53,13 +53,12 @@ let
     inherit PL PLGrammar PLLabel PLParser PLPrinter Reversible;
   };
 
-
   PLRepl = pkgs.haskell.packages.ghcjs.callCabal2nix "PLRepl" (srcFilter ../Lib) {
     inherit PL PLEditor PLGrammar PLLabel PLLispy PLParser PLPrinter Reversible;
   };
 in
 {
   PLReplJs = pkgs.haskell.packages.ghcjs.callCabal2nix "PLReplJs" (srcFilter ./.) {
-    inherit PL PLRepl;
+    inherit PL PLRepl PLLispy PLEditor;
   };
 }

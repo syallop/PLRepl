@@ -5,15 +5,19 @@ category:            Web
 build-type:          Simple
 cabal-version:       >=1.10
 
-executable app
+executable client
   main-is:             Main.hs
   ghcjs-options:
     -dedupe
   build-depends:       base
                      , miso
+                     , text
+                     , random
+                     , containers
 
                      , PL
                      , PLRepl
+                     , PLEditor
+                     , PLLispy
 
-                     , text
   default-language:    Haskell2010
