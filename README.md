@@ -105,4 +105,5 @@ If dependencies have not been cached this is likely to take a long time.
 Build artifacts are linked under `result/bin/client.jsexe/`.
 
 You should be able to open `result/bin/client.jsexe/index.html` in a browser.
+![Web UI](https://github.com/syallop/PLRepl/blob/master/README/Web.png)
 
