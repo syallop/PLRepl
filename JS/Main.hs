@@ -190,28 +190,39 @@ handleEvent ev (State st) = case ev of
 drawUI :: State Name -> View (Event Name)
 drawUI (State st) = div_
   [ id_ "ui"
-  , style_ $ Map.fromList $ [("display","flex")]
+  , style_ $ Map.fromList $
+      [("display","flex")
+      ]
   ]
-  [ drawUsage UsageCursor (PL._usageState st)
-  , drawTypeCtx TypeCtxCursor (case PL._replState st of
-                                SomeReplState replState -> _typeCtx replState
-                              )
-  , div_
-      [id_ "editor-form"]
-      [ drawEditor EditorCursor (PL._editorState st)
-      , input_
-          [ type_  "submit"
-          , value_ "Evaluate"
-          , onClick Read
-          ]
-      , input_
-          [ type_ "submit"
-          , value_ "Random expression"
-          , onClick RandomExpression
+
+  [ div_
+      [ id_ "io-widgets"]
+      [ div_
+          [ id_ "editor-form"]
+          [ drawEditor EditorCursor (PL._editorState st)
+          , input_
+              [ type_  "submit"
+              , value_ "Evaluate"
+              , onClick Read
+              ]
+          , input_
+              [ type_ "submit"
+              , value_ "Random expression"
+              , onClick RandomExpression
+              ]
           ]
       , drawOutput OutputCursor (PL._outputState st)
       ]
-    ]
+
+  , div_
+      [ id_ "context-widgets"
+      ]
+      [ drawTypeCtx TypeCtxCursor (case PL._replState st of
+                                     SomeReplState replState -> _typeCtx replState
+                                  )
+      , drawUsage UsageCursor (PL._usageState st)
+      ]
+  ]
   where
 
   -- TODO: Set view to size of output DOM elements/ add scrolling
