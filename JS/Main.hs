@@ -198,14 +198,14 @@ drawUI (State st) = div_ [] $
       [id_ "editor-form"]
       [ drawEditor EditorCursor (PL._editorState st)
       , input_
-          [ type_ "submit"
-          , value_ "Random expression"
-          , onClick RandomExpression
-          ]
-      , input_
           [ type_  "submit"
           , value_ "Evaluate"
           , onClick Read
+          ]
+      , input_
+          [ type_ "submit"
+          , value_ "Random expression"
+          , onClick RandomExpression
           ]
       , drawOutput OutputCursor (PL._outputState st)
       ]
