@@ -382,7 +382,7 @@ drawUI st =
     sidebar = types <=> usage
 
     types :: Widget PL.Name
-    types = borderWithLabel (str "Built in types")
+    types = borderWithLabel (str "Type context")
           $ padRight Max
           $ padBottom Max
           $ drawTypeCtx TypeCtxCursor (_typeCtxState st)
