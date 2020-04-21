@@ -59,6 +59,6 @@ let
 in
 {
   PLReplJs = pkgs.haskell.packages.ghcjs.callCabal2nix "PLReplJs" (srcFilter ./.) {
-    inherit PL PLRepl PLLispy PLEditor PLPrinter;
+    inherit PL PLRepl PLLispy PLEditor PLPrinter PLGrammar;
   };
 }

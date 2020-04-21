@@ -3,7 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImplicitParams #-}
 
--- | Haskell module declaration
+
 module Main where
 
 -- | Miso framework import
@@ -15,46 +15,43 @@ import GHCJS.Types
 import GHCJS.Marshal
 
 -- PL dependencies
-import qualified PL as PL
-
-import qualified PL.Expr as PL
-import PL.Expr hiding (Expr, App)
-
-import qualified PL.Type as PL
-import PL.Type hiding (Type)
-
-import PLRepl.Repl
-import PLRepl.Repl.Lispy
-import qualified PLRepl.Widgets.State as PL
-import PLRepl.Widgets.Name
-
-import PLRepl.Widgets.Event hiding (Event)
-import qualified PLRepl.Widgets.Event as PL
-
-import qualified PL.Test.Expr as Test
-import qualified PL.Test.ExprTestCase as Test
-import qualified PLLispy.Test.Sources.Expr as Test
-
-import PLLispy
-
-import PL.Var
 import PL.Error
-import PL.TyVar
+import PL.Expr hiding (Expr, App)
 import PL.FixExpr
 import PL.FixType
-
+import PL.Kind
+import PL.TyVar
+import PL.Type hiding (Type)
+import PL.TypeCtx
+import PL.Var
+import PLGrammar
+import PLLispy
+import PLLispy.Level
+import PLPrinter (lineBreak,indent,pprint)
+import PLPrinter.Doc (parens)
+import PLRepl.Repl
+import PLRepl.Repl.Lispy
+import PLRepl.Widgets.Event hiding (Event)
+import PLRepl.Widgets.Name
+import qualified PL as PL
+import qualified PL.Expr as PL
+import qualified PL.Name as PL
+import qualified PL.Test.Expr as Test
+import qualified PL.Test.ExprTestCase as Test
+import qualified PL.Type as PL
 import qualified PLEditor as E
-
+import qualified PLLispy.Test.Sources.Expr as Test
 import qualified PLPrinter
-
+import qualified PLRepl.Widgets.Event as PL
+import qualified PLRepl.Widgets.State as PL
 
 -- Other dependencies
-import Data.Text (Text)
-import qualified Data.Text as Text
 import Data.Map (Map)
-import qualified Data.Map as Map
-
+import Data.Maybe
+import Data.Text (Text)
 import System.Random
+import qualified Data.Map as Map
+import qualified Data.Text as Text
 
 -- Aliases for the concrete expression/ types we're going to use
 type Expr = PL.Expr Var Type TyVar
@@ -191,9 +188,14 @@ handleEvent ev (State st) = case ev of
 
 -- Draw the entire state
 drawUI :: State Name -> View (Event Name)
-drawUI (State st) = div_ [] $
+drawUI (State st) = div_
+  [ id_ "ui"
+  , style_ $ Map.fromList $ [("display","flex")]
+  ]
   [ drawUsage UsageCursor (PL._usageState st)
-  , drawTypeCtx TypeCtxCursor (PL._typeCtxState st)
+  , drawTypeCtx TypeCtxCursor (case PL._replState st of
+                                SomeReplState replState -> _typeCtx replState
+                              )
   , div_
       [id_ "editor-form"]
       [ drawEditor EditorCursor (PL._editorState st)
@@ -252,10 +254,10 @@ drawUI (State st) = div_ [] $
 
   drawTypeCtx
     :: Name
-    -> PL.TypeCtxState
+    -> TypeCtx TyVar
     -> View (Event Name)
-  drawTypeCtx _typCtxCursor editor =
-    let txt = PL.editorText editor
+  drawTypeCtx _typCtxCursor typeCtx =
+    let txt = (PLPrinter.render . ppTypeCtx tyVar) $ typeCtx
      in div_
           [ id_ "type-ctx"
           ]
@@ -314,4 +316,39 @@ randomExample = do
 
 exampleLispyTestCases :: Map Text Test.ExprTestCase
 exampleLispyTestCases = Map.fromList $ Test.testCases Test.sources
+
+ppTypeCtx :: (Show tb, Ord tb) => Grammar tb -> TypeCtx tb -> PLPrinter.Doc
+ppTypeCtx tb = mconcat
+             . Map.foldrWithKey
+                 (\typeName typeInfo acc -> ppTypeName typeName : lineBreak : indent 2 (ppTypeInfo tb typeInfo) : lineBreak : lineBreak : acc)
+                 []
+             . typeCtxMapping
+
+ppTypeName :: PL.TypeName -> PLPrinter.Doc
+ppTypeName (PL.TypeName n) = PLPrinter.char '#' <> PLPrinter.text n
+
+ppTypeInfo :: (Show tb, Ord tb) => Grammar tb -> TypeInfo tb -> PLPrinter.Doc
+ppTypeInfo tb (TypeInfo isRecursive kind def) = mconcat
+    [ ppRec isRecursive
+    , lineBreak
+    , PLPrinter.text ":: ", ppKind kind
+    , lineBreak
+    , PLPrinter.text "= ", ppType tb def
+    ]
+
+ppRec :: Rec -> PLPrinter.Doc
+ppRec r = PLPrinter.text $ case r of
+  Rec -> "Rec"
+  NonRec -> "NonRec"
+
+ppKind :: Kind -> PLPrinter.Doc
+ppKind k = case k of
+  Kind
+    -> PLPrinter.text "KIND"
+  KindArrow from to
+    -> PLPrinter.char '^' <> parens (ppKind from) <> parens (ppKind to)
+
+ppType :: (Show tb, Ord tb) => Grammar tb -> PL.Type tb -> PLPrinter.Doc
+ppType tb t = fromMaybe mempty $ pprint (toPrinter (top $ typ tb)) t
+
 
