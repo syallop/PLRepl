@@ -217,8 +217,8 @@ drawUI (State st) = div_ [] $
     :: Name
     -> PL.EditorState
     -> View (Event Name)
-  drawEditor _editorCursor (PL.EditorState editor view) =
-    let txt = (\(lines,pos) -> Text.unlines . fmap E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
+  drawEditor _editorCursor editor =
+    let txt = PL.editorText editor
      in div_
           [ id_ "editor"]
           [ h2_ [] [ text "Editor"]
@@ -237,8 +237,8 @@ drawUI (State st) = div_ [] $
     :: Name
     -> PL.OutputState
     -> View (Event Name)
-  drawOutput _outputCursor (PL.EditorState editor view) =
-    let txt = (\(lines,pos) -> Text.unlines . fmap E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
+  drawOutput _outputCursor editor =
+    let txt = PL.editorText editor
      in div_
           [ id_ "output"
           ]
@@ -254,8 +254,8 @@ drawUI (State st) = div_ [] $
     :: Name
     -> PL.TypeCtxState
     -> View (Event Name)
-  drawTypeCtx _typCtxCursor (PL.EditorState editor view) =
-    let txt = (\(lines,pos) -> Text.unlines . fmap E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
+  drawTypeCtx _typCtxCursor editor =
+    let txt = PL.editorText editor
      in div_
           [ id_ "type-ctx"
           ]
@@ -270,8 +270,8 @@ drawUI (State st) = div_ [] $
     :: Name
     -> PL.UsageState
     -> View (Event Name)
-  drawUsage _usageCursor (PL.EditorState editor view) =
-    let txt = (\(lines,_pos) -> Text.unlines . fmap E.lineText . E.renderLines $ lines) . E.viewEditor view $ editor
+  drawUsage _usageCursor editor =
+    let txt = PL.editorText editor
      in div_
           [ id_ "usage"
           ]
