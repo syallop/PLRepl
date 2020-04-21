@@ -2,32 +2,37 @@
 
 A REPL for an experimental [Programming Language](https://github.com/syallop/PL) which currently uses a ['lispy'](https://github.com/syallop/PLLispy) syntax.
 
-- [PL](https://github.com/syallop/PL) should describe the concepts of the language
+- [PL](https://github.com/syallop/PL) is the umbrella repo that should describe the concepts of the language.
 - [PLLispy](https://github.com/syallop/PLLispy) should provide an overview of the syntax this REPL accepts
 
 This REPL is primarily useful for development as most of the project is at
-an unfinished and experimental phase.
+an unfinished and experimental phase. 
 
-## Building
+
+The primary interface is a Terminal User Interface powered by Brick which
+supports parsing, reducing, type checking and printing expressions.
+
+A less stable web interface is also defined using GHCJS and Miso.
+
+## Terminal REPL
+### Building
 
 This project is developed with Haskells [stack](https://docs.haskellstack.org/en/stable/README/).
-`cabal` support is untested. 
+Direct `cabal` support is untested. 
 
 A number of PL dependencies are pinned by the `stack.yaml`. Build with `stack
 build`.
 
-## Installing
+### Installing
 
-If you with to install globally, run `stack install` to install the `pl`
+If you wish to install globally, run `stack install` to install the `pl`
 executable to your global stack binaries directory.
 
-
-## Executing
+### Executing
 
 If installed globally, call `pl`. If built locally, call `stack exec pl`.
 
-
-## Using
+### Using
 
 Launching the `pl` executable creates a [brick](https://hackage.haskell.org/package/brick)-based
 command line interface split into several panes.
@@ -37,7 +42,7 @@ command line interface split into several panes.
 - The bottom-left widget is an output text area that displays the result of parsing/ type checking code entered into the editor widget. 
 - The right widget displays a context of the types currently defined and available to be mentioned in the editor.  
 
-### Commands
+#### Commands
 
 Commands are entered by pressing keys, either a single key (such as an up
 arrow), or multiple (such as the up arrow while holding the control key).
@@ -66,14 +71,38 @@ Below is an overview of some of the commands the repl understands.
 | `ctrl + l`            | editor         | Clear all text from the editor widget |
 | `ESC`                 | global         | Exit the program |
 
-### Examples
+#### Examples
 
-Below are a couple of example functions, rendered with printing in a broken
-state...
+Below are a couple of example functions entered into the repl.
 
 Boolean and:
 ![Boolean And](https://github.com/syallop/PLRepl/blob/master/README/BooleanAnd.svg)
 
 Subtracting two from a natural number:
 ![Subtract Two](https://github.com/syallop/PLRepl/blob/master/README/SubTwo.svg)
+
+## Web REPL
+### Building
+
+The web UI is built with GHCJS and uses Nix for dependency management.
+
+You may want to use misos binary cache to speed up builds:
+
+```bash
+nix-env -iA cachix -f https://cachix.org/api/v1/install
+cachix use miso-haskell
+```
+
+Build with nix:
+
+```bash
+nix-build JS/
+```
+If dependencies have not been cached this is likely to take a long time.
+
+### Using
+
+Build artifacts are linked under `result/bin/client.jsexe/`.
+
+You should be able to open `result/bin/client.jsexe/index.html` in a browser.
 
