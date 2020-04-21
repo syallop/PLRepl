@@ -10,6 +10,10 @@ module Main where
 import Miso
 import Miso.String
 
+import GHCJS.Prim
+import GHCJS.Types
+import GHCJS.Marshal
+
 -- PL dependencies
 import qualified PL as PL
 
@@ -34,6 +38,7 @@ import qualified PLLispy.Test.Sources.Expr as Test
 import PLLispy
 
 import PL.Var
+import PL.Error
 import PL.TyVar
 import PL.FixExpr
 import PL.FixType
@@ -63,11 +68,18 @@ instance Eq (State n) where
  _ == _ = False
 
 data Event n
-  = PLEvent (PL.Event n)
-  | NoOp
+  = NoOp
+
+  | PLEvent (PL.Event n)
+
   | ReplaceEditorText Text
+
   | RandomExpression
-  | ReadEvalPrint
+
+  | Read
+  | Eval Text
+  | PrintFail (Error TyVar) (SomeReplState Var Type TyVar)
+  | PrintSuccess (PLPrinter.Doc) (SomeReplState Var Type TyVar)
 
 main :: IO ()
 main = run App{..}
@@ -107,49 +119,48 @@ handleEvent ev (State st) = case ev of
     -> noEff $ State $ st
 
   ReplaceEditorText txt
-    -> noEff $ State $ st{PL._editorState = handleEditorEventDefault (InsertText txt ). handleEditorEventDefault Clear . PL._editorState $ st}
+    -> noEff $ State st{PL._editorState = handleEditorEventDefault (InsertText txt ). handleEditorEventDefault Clear . PL._editorState $ st}
 
   RandomExpression
+    -> (State st)
+       <# do txt <- randomExample
+             pure $ ReplaceEditorText txt
+
+  -- Attempt to read text
+  Read
     -> (State st) <# do
-         txt <- randomExample
-         pure $ ReplaceEditorText txt
+         let txt = PL.editorText . PL._editorState $ st
+         pure $ Eval txt
 
-  ReadEvalPrint
-    -> let txt  = PL.editorText . PL._editorState $ st
-           (someReplState',eRes) = case PL._replState st of
-                                     SomeReplState replState
-                                       -> let step = replStep txt
-                                              (nextState, result) = _unRepl step replState
-                                           in (SomeReplState nextState, result)
-           st' = case eRes of
-             -- Some repl error
-             -- TODO:
-             -- - Printer should be able to render a document to a list
-             --   of lines with and without a DocFmt to prevent
-             --   re-detecting the newlines.
-             -- - The printer should be passed the current width so it
-             --   wraps optimally.
-             -- TODO: Should the typectx state be based upon the replstate after
-             -- failure?
+  -- Attempt to evaluate text
+  Eval txt
+    -> let (someReplState',eRes) = case PL._replState st of
+                                   SomeReplState replState
+                                     -> let step = replStep txt
+                                            (nextState, result) = _unRepl step replState
+                                         in (SomeReplState nextState, result)
+        in case eRes of
              Left err
-               -> st{ PL._outputState  = PL.newOutputState $ Text.lines $ (PLPrinter.render . PL.ppError tyVar) err
-                    , PL._typeCtxState = PL.typeCtxStateGivenReplState $ PL._replState st
-                    , PL._focusOn      = Just OutputCursor
-                    }
-
-             -- A Successful parse
+               -> (State st) <# (pure $ PrintFail err someReplState')
              Right a
-               -> st{ PL._replState    = someReplState'
-                    , PL._editorState  = PL.emptyEditorState
-                    , PL._outputState  = PL.newOutputState $ Text.lines $ PLPrinter.renderDocument a
-                    , PL._typeCtxState = PL.typeCtxStateGivenReplState someReplState'
-                    , PL._focusOn      = Just EditorCursor
-                    }
+               -> (State st) <# (pure $ PrintSuccess a someReplState')
 
-        in (State st') <# do
-             consoleLog "Output:"
-             consoleLog . ms . Text.unpack . PL.editorText . PL._outputState $ st'
-             pure NoOp
+  -- Failed to evaluate text
+  PrintFail err newReplState
+    -> noEff $ State st{ PL._replState    = newReplState
+                       , PL._outputState  = PL.newOutputState $ Text.lines $ (PLPrinter.render . PL.ppError tyVar) err
+                       , PL._typeCtxState = PL.typeCtxStateGivenReplState newReplState
+                       , PL._focusOn      = Just OutputCursor
+                       }
+
+  -- Successfully evaluated text
+  PrintSuccess a newReplState
+    -> noEff $ State  st{ PL._replState    = newReplState
+                        , PL._editorState  = PL.emptyEditorState
+                        , PL._outputState  = PL.newOutputState $ Text.lines $ PLPrinter.renderDocument a
+                        , PL._typeCtxState = PL.typeCtxStateGivenReplState newReplState
+                        , PL._focusOn      = Just EditorCursor
+                        }
 
   -- Events to core internal widgets
   PLEvent plEv
@@ -194,7 +205,7 @@ drawUI (State st) = div_ [] $
       , input_
           [ type_  "submit"
           , value_ "Evaluate"
-          , onClick ReadEvalPrint
+          , onClick Read
           ]
       , drawOutput OutputCursor (PL._outputState st)
       ]
@@ -216,9 +227,10 @@ drawUI (State st) = div_ [] $
               , autofocus_ True
               , cols_ "80"
               , rows_ "20"
-              , onInput (ReplaceEditorText . Text.pack . fromMisoString)
+              , value_ (ms txt)
+              , onChange (ReplaceEditorText . Text.pack . fromMisoString)
               ]
-              [ text . ms $ txt]
+              []
           ]
 
   drawOutput
