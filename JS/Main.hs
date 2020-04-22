@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImplicitParams #-}
 
-
 module Main where
 
 -- | Miso framework import
@@ -54,7 +53,7 @@ import qualified Data.Map as Map
 import qualified Data.Text as Text
 
 -- Aliases for the concrete expression/ types we're going to use
-type Expr = PL.Expr Var Type TyVar
+type Expr = PL.Expr
 type Type = PL.Type TyVar
 
 newtype State n = State (PL.State n)
@@ -75,8 +74,8 @@ data Event n
 
   | Read
   | Eval Text
-  | PrintFail (Error TyVar) (SomeReplState Var Type TyVar)
-  | PrintSuccess (PLPrinter.Doc) (SomeReplState Var Type TyVar)
+  | PrintFail (Error TyVar) (SomeReplState DefaultPhase)
+  | PrintSuccess (PLPrinter.Doc) (SomeReplState DefaultPhase)
 
 main :: IO ()
 main = run App{..}

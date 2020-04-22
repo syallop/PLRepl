@@ -55,13 +55,14 @@ import PL.Case
 import PL.Error
 import PL.Expr
 import PL.ExprLike
-import PLLispy
 import PL.Kind
 import PL.Name
 import PL.Reduce
+import PL.TyVar
 import PL.Type hiding (parens)
 import PL.Type.Eq
 import PL.TypeCtx
+import PLLispy
 import qualified PL.Megaparsec as PLMega
 import qualified PLParser as PLParser
 
@@ -86,35 +87,35 @@ import Prelude hiding (Read)
 
 -- | A Read function takes a Grammar on 'o' and attempts to parse text into an
 -- 'o'.
-type Read b abs tb o = Text -> Repl b abs tb o o
+type Read phase o = Text -> Repl phase o o
 
 -- | An Eval function transforms some value 'o'. Into a Repl function which may
 -- succeed with a new expression along with its type.
 -- A return value of Nothing is still a success, just with no new expression.
-type Eval b abs tb o = o -> Repl b abs tb o (Maybe (Expr b abs tb,Type tb))
+type Eval phase o = o -> Repl phase o (Maybe (ExprFor phase,Type (TypeBindingFor phase)))
 
 -- | A Print function takes the initial text, the parsed thing 'o', a possible expression and type
 -- it reduced to and returns some output Text to print.
-type Print b abs tb o = Text -> o -> Maybe (Expr b abs tb, Type tb) -> Repl b abs tb o Doc
+type Print phase o = Text -> o -> Maybe (ExprFor phase, Type (TypeBindingFor phase)) -> Repl phase o Doc
 
 -- | A ReplConfig is a set of active Grammar alongside Read, Eval and Print
 -- functions defined upon it.
-data ReplConfig b abs tb o where
+data ReplConfig phase o where
   ReplConfig
     :: { _someGrammar :: Grammar o -- A Grammar to read.
-       , _read        :: Read  b abs tb o
-       , _eval        :: Eval  b abs tb o
-       , _print       :: Print b abs tb o
+       , _read        :: Read  phase o
+       , _eval        :: Eval  phase o
+       , _print       :: Print phase o
        }
-    -> ReplConfig b abs tb o
+    -> ReplConfig phase o
 
 -- SomeReplConfig is a ReplConfig where the type of Grammar has been forgotten.
-data SomeReplConfig b abs tb = forall o. SomeReplConfig (ReplConfig b abs tb o)
+data SomeReplConfig phase = forall o. SomeReplConfig (ReplConfig phase o)
 
 -- | The empty ReplConfig always fails and outputs error documents for Read Eval
 -- and Print.
 emptyReplConfig
-  :: ReplConfig b abs tb o
+  :: ReplConfig phase o
 emptyReplConfig = ReplConfig
   { _someGrammar = rempty -- The Grammar that always fails.
   , _read        = \_ -> replError $ EMsg $ text "No read function defined in replConfig"
@@ -123,26 +124,26 @@ emptyReplConfig = ReplConfig
   }
 
 -- | The current st of the repl is a consistent view of type and expression bindings.
-data ReplState b abs tb o = ReplState
-  { _replConfig   :: ReplConfig b abs tb o
+data ReplState phase o = ReplState
+  { _replConfig   :: ReplConfig phase o
 
-  , _exprBindCtx  :: ExprBindCtx b tb -- Expr bindings 'b' have types
-  , _typeBindCtx  :: TypeBindCtx tb   -- Type bindings have kinds
+  , _exprBindCtx  :: BindCtx (BindingFor phase) (Type (TypeBindingFor phase)) -- Expr bindings have types
+  , _typeBindCtx  :: BindCtx (TypeBindingFor phase) Kind     -- Type bindings have kinds
 
-  , _typeBindings :: TypeBindings tb -- Type bindings may have a bound or unbound type
+  , _typeBindings :: Bindings (Type (TypeBindingFor phase)) -- Type bindings may have a bound or unbound type
 
-  , _typeCtx      :: TypeCtx tb      -- Names can be given to types
+  , _typeCtx      :: TypeCtx (TypeBindingFor phase) -- Names can be given to types
   }
 
 -- SomeReplState is a ReplState where the type of Grammar has been forgotten.
-data SomeReplState b abs tb = forall o. SomeReplState (ReplState b abs tb o)
+data SomeReplState phase = forall o. SomeReplState (ReplState phase o)
 
 -- | An initial, empty replst
 emptyReplState
-  :: (Binds b (Type tb)
-     ,Binds tb Kind
+  :: (Binds (BindingFor phase) (Type (TypeBindingFor phase))
+     ,Binds (TypeBindingFor phase) Kind
      )
-  => ReplState b abs tb o
+  => ReplState phase o
 emptyReplState = ReplState
   { _replConfig   = emptyReplConfig
   , _exprBindCtx  = emptyCtx
@@ -161,21 +162,21 @@ emptyReplState = ReplState
 --
 -- 'o' is the output type the grammar specifies.
 -- 'a' is the final result type.
-newtype Repl b abs tb o a = Repl
-  {_unRepl :: ReplState b abs tb o -> (ReplState b abs tb o, Either (Error tb) a)}
+newtype Repl phase o a = Repl
+  {_unRepl :: ReplState phase o -> (ReplState phase o, Either (Error (TypeBindingFor phase)) a)}
 
-instance Functor (Repl b abs tb o) where
+instance Functor (Repl phase o) where
   fmap f (Repl r) = Repl $ \st -> let (st',res) = r st
                                     in (st', case res of
                                                 Left err -> Left err
                                                 Right a  -> Right $ f a)
 
-instance Applicative (Repl b abs tb o) where
+instance Applicative (Repl phase o) where
   pure = return
   (<*>) = ap
 
 
-instance Monad (Repl b abs tb o) where
+instance Monad (Repl phase o) where
   return a = Repl $ \st -> (st,Right a)
 
   (Repl f) >>= fab = Repl $ \st -> let (st',res) = f st
@@ -186,19 +187,14 @@ instance Monad (Repl b abs tb o) where
 
 -- | Inject an error into the repl
 replError
-  :: Error tb
-  -> Repl b abs tb o x
+  :: Error (TypeBindingFor phase)
+  -> Repl phase o x
 replError err = Repl $ \st -> (st,Left err)
 
 -- Type check an expression in the repl context.
 replTypeCheck
-  :: ( Abstracts abs tb
-     , Binds b (Type tb)
-     , Binds tb Kind
-     , Ord tb
-     )
-  => Expr b abs tb
-  -> Repl b abs tb o (Type tb)
+  :: Expr
+  -> Repl DefaultPhase o (Type TyVar)
 replTypeCheck expr = Repl $ \st ->
   case exprType (_exprBindCtx st)
                 (_typeBindCtx st)
@@ -212,12 +208,8 @@ replTypeCheck expr = Repl $ \st ->
 
 -- Reduce an expression in the repl context.
 replReduce
-  :: ( Binds b (Type tb)
-     , Abstracts abs tb
-     , Eq b
-     )
-  => Expr b abs tb
-  -> Repl b abs tb o (Expr b abs tb)
+  :: Expr
+  -> Repl DefaultPhase o Expr
 replReduce initialExpr = case reduce initialExpr of
   Left err   -> replError err
   Right expr -> pure expr
@@ -225,13 +217,7 @@ replReduce initialExpr = case reduce initialExpr of
 -- A simple Eval function which takes a plain Expr, type checks it
 -- and then reduces.
 replEvalSimple
-  :: ( Binds b (Type tb)
-     , Binds tb Kind
-     , Abstracts abs tb
-     , Eq b
-     , Ord tb
-     )
-  => Eval b abs tb (Expr b abs tb)
+  :: Eval DefaultPhase Expr
 replEvalSimple expr = do
   ty      <- replTypeCheck expr
   redExpr <- replReduce    expr
@@ -239,25 +225,25 @@ replEvalSimple expr = do
 
 -- | Feed read text into the Repls configured read function.
 replRead
-  :: Read b abs tb o
+  :: Read phase o
 replRead input = Repl $ \replState ->
   let readF      = _read . _replConfig $ replState
       Repl replF = readF input
     in replF replState
 
 replEval
-  :: Eval b abs tb o
+  :: Eval phase o
 replEval a = Repl $ \replState ->
   let evalF = _eval . _replConfig $ replState
       Repl replF = evalF a
    in replF replState
 
 replGrammar
-  :: Repl b abs tb o (Grammar o)
+  :: Repl phase o (Grammar o)
 replGrammar = Repl $ \replState -> (replState, Right . _someGrammar . _replConfig $ replState)
 
 replPrint
-  :: Print b abs tb o
+  :: Print phase o
 replPrint originalTxt a mEvaluated = Repl $ \replState ->
   let printF = _print . _replConfig $ replState
       Repl replF = printF originalTxt a mEvaluated
@@ -268,7 +254,7 @@ replPrint originalTxt a mEvaluated = Repl $ \replState ->
 -- REPL.
 replStep
   :: Text
-  -> Repl b abs tb o Doc
+  -> Repl phase o Doc
 replStep input = do
   parsedOutput <- replRead input
   mEvaluated   <- replEval parsedOutput

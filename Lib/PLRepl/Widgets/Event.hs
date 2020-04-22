@@ -46,5 +46,5 @@ data Event n
   | FocusOn (Maybe n)
 
   -- The ReplState has been replaced with this value.
-  | ReplaceReplState (SomeReplState Var (Type TyVar) TyVar)
+  | ReplaceReplState (SomeReplState DefaultPhase)
 

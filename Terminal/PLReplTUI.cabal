@@ -16,11 +16,11 @@ executable pl
   build-depends:       base >= 4.12
 
                      , PLRepl
-                     , PL         >= 0.1
+                     , PL         >= 0.2
                      , PLEditor   >= 0.1
                      , PLGrammar  >= 0.4
                      , PLLabel    >= 0.1
-                     , PLLispy    >= 0.2
+                     , PLLispy    >= 0.3
                      , PLParser   >= 0.1
                      , PLPrinter  >= 0.3
                      , Reversible >= 0.1
