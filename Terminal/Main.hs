@@ -52,7 +52,7 @@ import PLRepl.Widgets.State as PL
 
 import PLLispy
 import PL.TyVar
-import PL.Type
+import PL.Type hiding (void)
 import PL.Var
 import PL.Error
 import PL.TypeCtx

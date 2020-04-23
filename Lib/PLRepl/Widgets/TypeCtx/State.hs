@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, GADTs #-}
 module PLRepl.Widgets.TypeCtx.State
   ( TypeCtxState
   , emptyTypeCtxState
@@ -17,6 +17,7 @@ import PL.Kind
 import PL.Name
 import PL.Type
 import PL.TypeCtx
+import PL.TyVar
 
 import qualified PLEditor as E
 import qualified PLPrinter
@@ -46,10 +47,10 @@ typeCtxText
   -> Text.Text
 typeCtxText = editorText
 
-ppTypeCtx :: (Show tb, Ord tb) => Grammar tb -> TypeCtx tb -> Doc
-ppTypeCtx tb = mconcat
+ppTypeCtx :: (phase ~ DefaultPhase) => Grammar TyVar -> TypeCtx phase -> Doc
+ppTypeCtx phase = mconcat
              . Map.foldrWithKey
-                 (\typeName typeInfo acc -> ppTypeName typeName : lineBreak : indent 2 (ppTypeInfo tb typeInfo) : lineBreak : lineBreak : acc)
+                 (\typeName typeInfo acc -> ppTypeName typeName : lineBreak : indent 2 (ppTypeInfo phase typeInfo) : lineBreak : lineBreak : acc)
                  []
              . typeCtxMapping
 
@@ -59,7 +60,7 @@ ppTypeName (TypeName n) = PLPrinter.char '#' <> PLPrinter.text n
 ppTermName :: TermName -> Doc
 ppTermName (TermName n) = PLPrinter.char '#' <> PLPrinter.text n
 
-ppTypeInfo :: (Show tb, Ord tb) => Grammar tb -> TypeInfo tb -> Doc
+ppTypeInfo :: (phase ~ DefaultPhase) => Grammar TyVar -> TypeInfo phase -> Doc
 ppTypeInfo tb (TypeInfo isRecursive kind def) = mconcat
     [ ppRec isRecursive
     , lineBreak
@@ -68,7 +69,7 @@ ppTypeInfo tb (TypeInfo isRecursive kind def) = mconcat
     , PLPrinter.text "= ", ppType tb def
     ]
 
-ppType :: (Show tb, Ord tb) => Grammar tb -> Type tb -> Doc
+ppType :: Grammar TyVar -> Type -> Doc
 ppType tb t = fromMaybe mempty $ pprint (toPrinter (top $ typ tb)) t
 
 ppRec :: Rec -> Doc
@@ -83,7 +84,7 @@ ppKind k = case k of
   KindArrow from to
     -> PLPrinter.char '^' <> parens (ppKind from) <> parens (ppKind to)
 
-ppError :: (Show tb, Ord tb) => Grammar tb -> Error tb -> Doc
+ppError :: Grammar TyVar -> Error DefaultPhase -> Doc
 ppError tb e = case e of
   EMsg doc
     -> doc

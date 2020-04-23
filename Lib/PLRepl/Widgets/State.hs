@@ -41,7 +41,6 @@ import PLRepl.Repl
 import PLRepl.Repl.Lispy
 
 import PL.Expr
-import PL.FixType
 import PL.TyVar
 import PL.Type
 import PL.TypeCtx
@@ -80,7 +79,7 @@ type GrammarName = Text
 -- | The state of the entire repl and sub-widgets.
 data State n = State
   { -- The state of the Repl includes types, expressions and bindings etc.
-    -- Currently configured with a Grammar on Expr Var (Type TyVar) TyVar
+    -- Currently configured with a Grammar on Expr Var Type TyVar
     _replState    :: SomeReplState DefaultPhase
 
     -- A Map of grammar names to repl configs with the intent we can swap out
@@ -132,9 +131,9 @@ initialState initialFocus usage = State
                                     exprBindCtx
                                     typeBindCtx
                                     typeBindings
-            $ fromJust $ insertType "Bool" (fixType $ SumT $ fmap fixType $ NE.fromList $ [ProductT [], ProductT []])
-            $ fromJust $ insertRecType "Nat" (fixType $ SumT $ fmap fixType $ NE.fromList $ [ProductT [], Named "Nat"])
-            $ fromJust $ insertType "Unit" (fixType $ ProductT []) typeCtx
+            $ fromJust $ insertType "Bool" (SumT $ NE.fromList $ [ProductT [], ProductT []])
+            $ fromJust $ insertRecType "Nat" (SumT $ NE.fromList $ [ProductT [], Named "Nat"])
+            $ fromJust $ insertType "Unit" (ProductT []) typeCtx
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
@@ -144,13 +143,13 @@ initialState initialFocus usage = State
     exprConfig :: ReplConfig DefaultPhase Expr
     exprConfig = lispyExprReplConfig (plGrammarParser exprGrammar) var (sub $ typ tyVar) tyVar
 
-    typePrinter :: Type TyVar -> Doc
+    typePrinter :: Type -> Doc
     typePrinter = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar)
 
-    typeGrammar :: G.Grammar (Type TyVar)
+    typeGrammar :: G.Grammar Type
     typeGrammar = top $ typ tyVar
 
-    typeConfig :: ReplConfig DefaultPhase (Type TyVar)
+    typeConfig :: ReplConfig DefaultPhase Type
     typeConfig = lispyTypeReplConfig (plGrammarParser typeGrammar) tyVar
 
       where

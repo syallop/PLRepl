@@ -48,7 +48,6 @@ module PLRepl.Repl
   )
   where
 
-import PL.Abstracts
 import PL.Bindings
 import PL.Binds
 import PL.Case
@@ -92,11 +91,11 @@ type Read phase o = Text -> Repl phase o o
 -- | An Eval function transforms some value 'o'. Into a Repl function which may
 -- succeed with a new expression along with its type.
 -- A return value of Nothing is still a success, just with no new expression.
-type Eval phase o = o -> Repl phase o (Maybe (ExprFor phase,Type (TypeBindingFor phase)))
+type Eval phase o = o -> Repl phase o (Maybe (ExprFor phase,TypeFor phase))
 
 -- | A Print function takes the initial text, the parsed thing 'o', a possible expression and type
 -- it reduced to and returns some output Text to print.
-type Print phase o = Text -> o -> Maybe (ExprFor phase, Type (TypeBindingFor phase)) -> Repl phase o Doc
+type Print phase o = Text -> o -> Maybe (ExprFor phase, TypeFor phase) -> Repl phase o Doc
 
 -- | A ReplConfig is a set of active Grammar alongside Read, Eval and Print
 -- functions defined upon it.
@@ -127,12 +126,12 @@ emptyReplConfig = ReplConfig
 data ReplState phase o = ReplState
   { _replConfig   :: ReplConfig phase o
 
-  , _exprBindCtx  :: BindCtx (BindingFor phase) (Type (TypeBindingFor phase)) -- Expr bindings have types
+  , _exprBindCtx  :: BindCtx (BindingFor phase) (TypeFor phase) -- Expr bindings have types
   , _typeBindCtx  :: BindCtx (TypeBindingFor phase) Kind     -- Type bindings have kinds
 
-  , _typeBindings :: Bindings (Type (TypeBindingFor phase)) -- Type bindings may have a bound or unbound type
+  , _typeBindings :: Bindings (TypeFor phase) -- Type bindings may have a bound or unbound type
 
-  , _typeCtx      :: TypeCtx (TypeBindingFor phase) -- Names can be given to types
+  , _typeCtx      :: TypeCtx phase -- Names can be given to types
   }
 
 -- SomeReplState is a ReplState where the type of Grammar has been forgotten.
@@ -140,7 +139,7 @@ data SomeReplState phase = forall o. SomeReplState (ReplState phase o)
 
 -- | An initial, empty replst
 emptyReplState
-  :: (Binds (BindingFor phase) (Type (TypeBindingFor phase))
+  :: (Binds (BindingFor phase) (TypeFor phase)
      ,Binds (TypeBindingFor phase) Kind
      )
   => ReplState phase o
@@ -163,7 +162,7 @@ emptyReplState = ReplState
 -- 'o' is the output type the grammar specifies.
 -- 'a' is the final result type.
 newtype Repl phase o a = Repl
-  {_unRepl :: ReplState phase o -> (ReplState phase o, Either (Error (TypeBindingFor phase)) a)}
+  {_unRepl :: ReplState phase o -> (ReplState phase o, Either (Error phase) a)}
 
 instance Functor (Repl phase o) where
   fmap f (Repl r) = Repl $ \st -> let (st',res) = r st
@@ -187,14 +186,14 @@ instance Monad (Repl phase o) where
 
 -- | Inject an error into the repl
 replError
-  :: Error (TypeBindingFor phase)
+  :: Error phase
   -> Repl phase o x
 replError err = Repl $ \st -> (st,Left err)
 
 -- Type check an expression in the repl context.
 replTypeCheck
   :: Expr
-  -> Repl DefaultPhase o (Type TyVar)
+  -> Repl DefaultPhase o Type
 replTypeCheck expr = Repl $ \st ->
   case exprType (_exprBindCtx st)
                 (_typeBindCtx st)

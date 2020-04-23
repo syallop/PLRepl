@@ -2,3 +2,4 @@
 set -eou pipefail
 
 nix-build JS/
+firefox result/bin/client.jsexe/index.html

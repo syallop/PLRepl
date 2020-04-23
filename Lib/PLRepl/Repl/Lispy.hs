@@ -27,11 +27,9 @@ module PLRepl.Repl.Lispy
   )
   where
 
-import PL.Abstracts
 import PL.Binds
 import PL.Error
 import PL.Expr
-import PL.FixType
 import PL.Kind
 import PL.TyVar
 import PL.Type
@@ -61,7 +59,7 @@ import qualified Text.Megaparsec as Mega
 lispyExprReplConfig
   :: (Text -> Repl DefaultPhase Expr Expr)
   -> Grammar Var
-  -> Grammar (Type TyVar)
+  -> Grammar Type
   -> Grammar TyVar
   -> ReplConfig DefaultPhase Expr
 lispyExprReplConfig grammarParser b abs tb =
@@ -81,23 +79,10 @@ lispyExprReplConfig grammarParser b abs tb =
 -- 'plGrammarParser' and 'megaparsecGrammarParser' are exported and can be used
 -- here.
 lispyTypeReplConfig
-  :: ( b ~ BindingFor phase
-     , abs ~ AbstractionFor phase
-     , tb ~ TypeBindingFor phase
-     , Show b
-     , Show abs
-     , Show tb
-     , Ord tb
-     , Eq b
-     , Eq abs
-     , Binds b (Type tb)
-     , Binds tb Kind
-     , Abstracts abs tb
-     , o ~ Type tb
-     )
-  => (Text -> Repl phase o o)
-  -> Grammar tb
-  -> ReplConfig phase (Type tb)
+  :: (phase ~ DefaultPhase)
+  => (Text -> Repl phase (TypeFor phase) (TypeFor phase))
+  -> Grammar (TypeBindingFor phase)
+  -> ReplConfig phase (TypeFor phase)
 lispyTypeReplConfig grammarParser tb = ReplConfig
   { _someGrammar = sub $ typ tb
   , _read        = grammarParser
@@ -196,20 +181,7 @@ megaparsecGrammarParser grammar =
 
 -- Transform a parsed expr, its reduction and type into some output to print
 printerF
-  :: ( b ~ BindingFor phase
-     , abs ~ AbstractionFor phase
-     , tb ~ TypeBindingFor phase
-     , Show b
-     , Show abs
-     , Show tb
-     , Ord tb
-     , Eq b
-     , Eq abs
-     , Binds b (Type tb)
-     , Binds tb Kind
-     , Abstracts abs tb
-     )
-  => (Type tb -> Doc)
+  :: (TypeFor phase -> Doc)
   -> Print phase (ExprFor phase)
 printerF ppType = \inputTxt parsed mEval -> do
   grammar <- replGrammar

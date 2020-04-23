@@ -16,8 +16,6 @@ import GHCJS.Marshal
 -- PL dependencies
 import PL.Error
 import PL.Expr hiding (Expr, App)
-import PL.FixExpr
-import PL.FixType
 import PL.Kind
 import PL.TyVar
 import PL.Type hiding (Type)
@@ -54,7 +52,7 @@ import qualified Data.Text as Text
 
 -- Aliases for the concrete expression/ types we're going to use
 type Expr = PL.Expr
-type Type = PL.Type TyVar
+type Type = PL.Type
 
 newtype State n = State (PL.State n)
 
@@ -74,7 +72,7 @@ data Event n
 
   | Read
   | Eval Text
-  | PrintFail (Error TyVar) (SomeReplState DefaultPhase)
+  | PrintFail (Error DefaultPhase) (SomeReplState DefaultPhase)
   | PrintSuccess (PLPrinter.Doc) (SomeReplState DefaultPhase)
 
 main :: IO ()
@@ -264,7 +262,7 @@ drawUI (State st) = div_
 
   drawTypeCtx
     :: Name
-    -> TypeCtx TyVar
+    -> TypeCtx DefaultPhase
     -> View (Event Name)
   drawTypeCtx _typCtxCursor typeCtx =
     let txt = (PLPrinter.render . ppTypeCtx tyVar) $ typeCtx
@@ -327,7 +325,7 @@ randomExample = do
 exampleLispyTestCases :: Map Text Test.ExprTestCase
 exampleLispyTestCases = Map.fromList $ Test.testCases Test.sources
 
-ppTypeCtx :: (Show tb, Ord tb) => Grammar tb -> TypeCtx tb -> PLPrinter.Doc
+ppTypeCtx :: Grammar TyVar -> TypeCtx DefaultPhase -> PLPrinter.Doc
 ppTypeCtx tb = mconcat
              . Map.foldrWithKey
                  (\typeName typeInfo acc -> ppTypeName typeName : lineBreak : indent 2 (ppTypeInfo tb typeInfo) : lineBreak : lineBreak : acc)
@@ -337,7 +335,7 @@ ppTypeCtx tb = mconcat
 ppTypeName :: PL.TypeName -> PLPrinter.Doc
 ppTypeName (PL.TypeName n) = PLPrinter.char '#' <> PLPrinter.text n
 
-ppTypeInfo :: (Show tb, Ord tb) => Grammar tb -> TypeInfo tb -> PLPrinter.Doc
+ppTypeInfo :: Grammar TyVar -> TypeInfo DefaultPhase -> PLPrinter.Doc
 ppTypeInfo tb (TypeInfo isRecursive kind def) = mconcat
     [ ppRec isRecursive
     , lineBreak
@@ -358,7 +356,7 @@ ppKind k = case k of
   KindArrow from to
     -> PLPrinter.char '^' <> parens (ppKind from) <> parens (ppKind to)
 
-ppType :: (Show tb, Ord tb) => Grammar tb -> PL.Type tb -> PLPrinter.Doc
+ppType :: Grammar TyVar -> Type -> PLPrinter.Doc
 ppType tb t = fromMaybe mempty $ pprint (toPrinter (top $ typ tb)) t
 
 
