@@ -141,11 +141,12 @@ handleEvent ev (State st) = case ev of
 
   -- Failed to evaluate text
   PrintFail err newReplState
-    -> noEff $ State st{ PL._replState    = newReplState
-                       , PL._outputState  = PL.newOutputState $ Text.lines $ (PLPrinter.render . PL.ppError tyVar) err
-                       , PL._typeCtxState = PL.typeCtxStateGivenReplState newReplState
-                       , PL._focusOn      = Just OutputCursor
-                       }
+    -> let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar)
+        in noEff $ State st{ PL._replState    = newReplState
+                           , PL._outputState  = PL.newOutputState . Text.lines . PLPrinter.render . PL.ppError ppType $ err
+                           , PL._typeCtxState = PL.typeCtxStateGivenReplState newReplState
+                           , PL._focusOn      = Just OutputCursor
+                           }
 
   -- Successfully evaluated text
   PrintSuccess a newReplState
@@ -323,7 +324,7 @@ randomExample = do
   return . Test._parsesFrom $ randomTestCase
 
 exampleLispyTestCases :: Map Text Test.ExprTestCase
-exampleLispyTestCases = Map.fromList $ Test.testCases Test.sources
+exampleLispyTestCases = Test.mkTestCases Test.sources
 
 ppTypeCtx :: Grammar TyVar -> TypeCtx DefaultPhase -> PLPrinter.Doc
 ppTypeCtx tb = mconcat

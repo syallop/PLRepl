@@ -45,6 +45,8 @@ nextFocus n = case n of
   UsageCursor
     -> EditorCursor
 
+  _ -> error "Non-exhaustive pattern in nextFocus"
+
 -- | Manually map a 'focusable' name to the previous.
 previousFocus
   :: Name
@@ -61,4 +63,6 @@ previousFocus n = case n of
 
   UsageCursor
     -> TypeCtxCursor
+
+  _ -> error "Non-exhaustive pattern in previousFocus"
 

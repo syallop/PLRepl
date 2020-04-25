@@ -84,6 +84,7 @@ ppKind k = case k of
   KindArrow from to
     -> PLPrinter.char '^' <> parens (ppKind from) <> parens (ppKind to)
 
+{-
 ppError :: Grammar TyVar -> Error DefaultPhase -> Doc
 ppError tb e = case e of
   EMsg doc
@@ -146,4 +147,5 @@ ppError tb e = case e of
                , ppType tb firstBranchTy
                , PLPrinter.text " but branches must have the same type."
                ]
+-}
 
