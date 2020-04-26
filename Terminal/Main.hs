@@ -51,8 +51,10 @@ import PLRepl.Widgets.Name  as PL
 import PLRepl.Widgets.State as PL
 
 import PLLispy
+import PLLispy.Expr
 import PLLispy.Level
 import PL.TyVar
+import PL.Commented
 import PL.Type hiding (void)
 import PL.Var
 import PL.Error
@@ -262,7 +264,7 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                   --   re-detecting the newlines.
                   -- - The printer should be passed the current width so it
                   --   wraps optimally.
-                  -> let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar)
+                  -> let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
                       in continue (PL.State someReplState
                                         replConfigs
                                         editorSt
@@ -495,5 +497,4 @@ randomExample = do
 
 exampleLispyTestCases :: Map Text Test.ExprTestCase
 exampleLispyTestCases = Test.mkTestCases Test.sources
-
 

@@ -41,6 +41,7 @@ import PLRepl.Repl
 import PLRepl.Repl.Lispy
 
 import PL.Expr
+import PL.Commented
 import PL.TyVar
 import PL.Type
 import PL.TypeCtx
@@ -80,11 +81,11 @@ type GrammarName = Text
 data State n = State
   { -- The state of the Repl includes types, expressions and bindings etc.
     -- Currently configured with a Grammar on Expr Var Type TyVar
-    _replState    :: SomeReplState DefaultPhase
+    _replState    :: SomeReplState
 
     -- A Map of grammar names to repl configs with the intent we can swap out
     -- grammars at runtime in order to parse, eval and print things differently.
-  , _replConfigs  :: Map GrammarName (SomeReplConfig DefaultPhase)
+  , _replConfigs  :: Map GrammarName SomeReplConfig
 
    -- The editorState corresponds to an input widget into which expressions are
    -- entered.
@@ -124,9 +125,9 @@ initialState initialFocus usage = State
   where
     -- Take the emptyReplState, then add an initial non-empty replconfig and a
     -- few example types.
-    initialReplState :: SomeReplState DefaultPhase
+    initialReplState :: SomeReplState
     initialReplState =
-      let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx = (emptyReplState :: ReplState DefaultPhase ())
+      let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx = (emptyReplState :: ReplState ())
        in SomeReplState $ ReplState (exprConfig)
                                     exprBindCtx
                                     typeBindCtx
@@ -137,23 +138,23 @@ initialState initialFocus usage = State
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
-    exprGrammar :: G.Grammar Expr
+    exprGrammar :: G.Grammar CommentedExpr
     exprGrammar = top $ expr var (sub $ typ tyVar) tyVar
 
-    exprConfig :: ReplConfig DefaultPhase Expr
+    exprConfig :: ReplConfig CommentedExpr
     exprConfig = lispyExprReplConfig (plGrammarParser exprGrammar) var (sub $ typ tyVar) tyVar
 
-    typePrinter :: Type -> Doc
+    typePrinter :: CommentedType -> Doc
     typePrinter = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar)
 
-    typeGrammar :: G.Grammar Type
+    typeGrammar :: G.Grammar CommentedType
     typeGrammar = top $ typ tyVar
 
-    typeConfig :: ReplConfig DefaultPhase Type
+    typeConfig :: ReplConfig CommentedType
     typeConfig = lispyTypeReplConfig (plGrammarParser typeGrammar) tyVar
 
       where
-    initialReplConfigs :: Map GrammarName (SomeReplConfig DefaultPhase)
+    initialReplConfigs :: Map GrammarName SomeReplConfig
     initialReplConfigs = Map.fromList
       [ ("lispyExpr", SomeReplConfig exprConfig)
       , ("lispyType", SomeReplConfig typeConfig)
@@ -161,7 +162,7 @@ initialState initialFocus usage = State
 
 -- | What is the typeCtxState output given the current ReplState.
 typeCtxStateGivenReplState
-  :: SomeReplState DefaultPhase
+  :: SomeReplState
   -> TypeCtxState
 typeCtxStateGivenReplState (SomeReplState replState) = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx tyVar) . _typeCtx $ replState
 

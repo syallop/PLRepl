@@ -14,6 +14,7 @@ import PLRepl.Widgets.Editor.State
 
 import PL.Error
 import PL.Kind
+import PL.Commented
 import PL.Name
 import PL.Type
 import PL.TypeCtx
@@ -47,7 +48,7 @@ typeCtxText
   -> Text.Text
 typeCtxText = editorText
 
-ppTypeCtx :: (phase ~ DefaultPhase) => Grammar TyVar -> TypeCtx phase -> Doc
+ppTypeCtx :: Grammar TyVar -> TypeCtx DefaultPhase -> Doc
 ppTypeCtx phase = mconcat
              . Map.foldrWithKey
                  (\typeName typeInfo acc -> ppTypeName typeName : lineBreak : indent 2 (ppTypeInfo phase typeInfo) : lineBreak : lineBreak : acc)
@@ -60,7 +61,7 @@ ppTypeName (TypeName n) = PLPrinter.char '#' <> PLPrinter.text n
 ppTermName :: TermName -> Doc
 ppTermName (TermName n) = PLPrinter.char '#' <> PLPrinter.text n
 
-ppTypeInfo :: (phase ~ DefaultPhase) => Grammar TyVar -> TypeInfo phase -> Doc
+ppTypeInfo :: Grammar TyVar -> TypeInfo DefaultPhase -> Doc
 ppTypeInfo tb (TypeInfo isRecursive kind def) = mconcat
     [ ppRec isRecursive
     , lineBreak
@@ -70,7 +71,7 @@ ppTypeInfo tb (TypeInfo isRecursive kind def) = mconcat
     ]
 
 ppType :: Grammar TyVar -> Type -> Doc
-ppType tb t = fromMaybe mempty $ pprint (toPrinter (top $ typ tb)) t
+ppType tb = fromMaybe mempty . pprint (toPrinter (top $ typ tb)) . addTypeComments
 
 ppRec :: Rec -> Doc
 ppRec r = PLPrinter.text $ case r of

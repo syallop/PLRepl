@@ -16,6 +16,7 @@ import GHCJS.Marshal
 -- PL dependencies
 import PL.Error
 import PL.Expr hiding (Expr, App)
+import PL.Commented
 import PL.Kind
 import PL.TyVar
 import PL.Type hiding (Type)
@@ -72,8 +73,8 @@ data Event n
 
   | Read
   | Eval Text
-  | PrintFail (Error DefaultPhase) (SomeReplState DefaultPhase)
-  | PrintSuccess (PLPrinter.Doc) (SomeReplState DefaultPhase)
+  | PrintFail (Error DefaultPhase) SomeReplState
+  | PrintSuccess (PLPrinter.Doc) SomeReplState
 
 main :: IO ()
 main = run App{..}
@@ -141,7 +142,7 @@ handleEvent ev (State st) = case ev of
 
   -- Failed to evaluate text
   PrintFail err newReplState
-    -> let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar)
+    -> let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
         in noEff $ State st{ PL._replState    = newReplState
                            , PL._outputState  = PL.newOutputState . Text.lines . PLPrinter.render . PL.ppError ppType $ err
                            , PL._typeCtxState = PL.typeCtxStateGivenReplState newReplState
@@ -358,6 +359,6 @@ ppKind k = case k of
     -> PLPrinter.char '^' <> parens (ppKind from) <> parens (ppKind to)
 
 ppType :: Grammar TyVar -> Type -> PLPrinter.Doc
-ppType tb t = fromMaybe mempty $ pprint (toPrinter (top $ typ tb)) t
+ppType tb = fromMaybe mempty . pprint (toPrinter (top $ typ tb)) . addTypeComments
 
 
