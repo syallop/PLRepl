@@ -43,7 +43,7 @@ let
   };
 
   PL = pkgs.haskell.packages.ghcjs.callCabal2nix "PL" (srcFilter ../../Core) {
-    inherit PLGrammar PLParser PLPrinter Reversible;
+    inherit PLGrammar PLPrinter Reversible;
   };
 
   PLEditor = pkgs.haskell.packages.ghcjs.callCabal2nix "PLEditor" (srcFilter ../../Editor) {
