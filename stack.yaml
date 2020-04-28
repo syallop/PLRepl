@@ -16,7 +16,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLLispy
-    commit: f00d32080525f8be755a20b8e62c6fd827be4779
+    commit: 6e55842cc3d5c3caff6ced73aa991b96324185ab
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLParser
