@@ -8,7 +8,7 @@ packages:
 - './Lib'
 - location:
     git: https://github.com/syallop/PLCore
-    commit: a83fee93c5e21616da64239f06b6a5acaa07fd01
+    commit: 5c9dd50468715463b9b83763c1e1a94e839c852c
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLEditor
@@ -16,7 +16,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLLispy
-    commit: a278e8cd9e6a24224069738ed868c78ac5653d12
+    commit: f00d32080525f8be755a20b8e62c6fd827be4779
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLParser

@@ -203,13 +203,20 @@ replTypeCheck expr = Repl $ \st ->
     Right ty
       -> (st,Right ty)
 
+-- Get the type context the repl is using to parse/ evaluate types.
+replTypeCtx
+  :: Repl o (TypeCtx DefaultPhase)
+replTypeCtx = Repl $ \st -> (st, Right $ _typeCtx st)
+
 -- Reduce an expression in the repl context.
 replReduce
   :: Expr
   -> Repl o Expr
-replReduce initialExpr = case reduce initialExpr of
-  Left err   -> replError err
-  Right expr -> pure expr
+replReduce initialExpr = do
+  underTypeCtx <- replTypeCtx
+  case reduce underTypeCtx initialExpr of
+    Left err   -> replError err
+    Right expr -> pure expr
 
 -- A simple Eval function which takes a plain Expr, type checks it
 -- and then reduces.
