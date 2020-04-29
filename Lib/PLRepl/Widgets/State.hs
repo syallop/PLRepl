@@ -46,6 +46,7 @@ import PL.TyVar
 import PL.Type
 import PL.TypeCtx
 import PL.Var
+import PL.Test.Shared
 
 import PLLispy
 import PLLispy.Level
@@ -132,9 +133,7 @@ initialState initialFocus usage = State
                                     exprBindCtx
                                     typeBindCtx
                                     typeBindings
-            $ fromJust $ insertType "Bool" (SumT $ NE.fromList $ [ProductT [], ProductT []])
-            $ fromJust $ insertRecType "Nat" (SumT $ NE.fromList $ [ProductT [], Named "Nat"])
-            $ fromJust $ insertType "Unit" (ProductT []) typeCtx
+                                    sharedTypeCtx
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 
