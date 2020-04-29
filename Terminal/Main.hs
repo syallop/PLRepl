@@ -264,11 +264,12 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                   --   re-detecting the newlines.
                   -- - The printer should be passed the current width so it
                   --   wraps optimally.
-                  -> let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
+                  -> let ppType    = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
+                         ppPattern = fromMaybe mempty . pprint (toPrinter $ top $ pattern var tyVar) . addPatternComments
                       in continue (PL.State someReplState
                                         replConfigs
                                         editorSt
-                                        (newOutputState $ Text.lines $ (PLPrinter.render . ppError ppType $ err))
+                                        (newOutputState $ Text.lines $ (PLPrinter.render . ppError ppPattern ppType $ err))
                                         (typeCtxStateGivenReplState someReplState) -- someReplState' ?
                                         usageSt
                                         (Just OutputCursor))

@@ -62,6 +62,7 @@ import PL.TyVar
 import PL.Type hiding (parens)
 import PL.Type.Eq
 import PL.TypeCtx
+import PL.Pattern
 import PLLispy
 import qualified PL.Megaparsec as PLMega
 import qualified PLParser as PLParser
@@ -160,7 +161,7 @@ emptyReplState = ReplState
 -- 'o' is the output type the grammar specifies.
 -- 'a' is the final result type.
 newtype Repl o a = Repl
-  {_unRepl :: ReplState o -> (ReplState o, Either (Error DefaultPhase) a)}
+  {_unRepl :: ReplState o -> (ReplState o, Either (Error Type Pattern) a)}
 
 instance Functor (Repl o) where
   fmap f (Repl r) = Repl $ \st -> let (st',res) = r st
@@ -184,7 +185,7 @@ instance Monad (Repl o) where
 
 -- | Inject an error into the repl
 replError
-  :: Error DefaultPhase
+  :: Error Type Pattern
   -> Repl o x
 replError err = Repl $ \st -> (st,Left err)
 
