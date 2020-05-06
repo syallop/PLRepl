@@ -56,6 +56,7 @@ import PL.Error
 import PL.Expr
 import PL.ExprLike
 import PL.Kind
+import PL.Var
 import PL.Name
 import PL.Reduce
 import PL.TyVar
@@ -128,12 +129,12 @@ emptyReplConfig = ReplConfig
 data ReplState o = ReplState
   { _replConfig   :: ReplConfig o
 
-  , _exprBindCtx  :: BindCtx (BindingFor DefaultPhase) (TypeFor DefaultPhase) -- Expr bindings have types
-  , _typeBindCtx  :: BindCtx (TypeBindingFor DefaultPhase) Kind     -- Type bindings have kinds
+  , _exprBindCtx  :: BindCtx Var Type -- Expr bindings have types
+  , _typeBindCtx  :: BindCtx TyVar Kind     -- Type bindings have kinds
 
-  , _typeBindings :: Bindings (TypeFor DefaultPhase) -- Type bindings may have a bound or unbound type
+  , _typeBindings :: Bindings Type -- Type bindings may have a bound or unbound type
 
-  , _typeCtx      :: TypeCtx DefaultPhase -- Names can be given to types
+  , _typeCtx      :: TypeCtx -- Names can be given to types
   }
 
 -- SomeReplState is a ReplState where the type of Grammar has been forgotten.
@@ -161,7 +162,7 @@ emptyReplState = ReplState
 -- 'o' is the output type the grammar specifies.
 -- 'a' is the final result type.
 newtype Repl o a = Repl
-  {_unRepl :: ReplState o -> (ReplState o, Either (Error Type Pattern) a)}
+  {_unRepl :: ReplState o -> (ReplState o, Either (Error Expr Type Pattern TypeCtx) a)}
 
 instance Functor (Repl o) where
   fmap f (Repl r) = Repl $ \st -> let (st',res) = r st
@@ -185,7 +186,7 @@ instance Monad (Repl o) where
 
 -- | Inject an error into the repl
 replError
-  :: Error Type Pattern
+  :: Error Expr Type Pattern TypeCtx
   -> Repl o x
 replError err = Repl $ \st -> (st,Left err)
 
@@ -206,7 +207,7 @@ replTypeCheck expr = Repl $ \st ->
 
 -- Get the type context the repl is using to parse/ evaluate types.
 replTypeCtx
-  :: Repl o (TypeCtx DefaultPhase)
+  :: Repl o TypeCtx
 replTypeCtx = Repl $ \st -> (st, Right $ _typeCtx st)
 
 -- Reduce an expression in the repl context.

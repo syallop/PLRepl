@@ -266,10 +266,13 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                   --   wraps optimally.
                   -> let ppType    = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
                          ppPattern = fromMaybe mempty . pprint (toPrinter $ top $ pattern var tyVar) . addPatternComments
+                         ppExpr    = fromMaybe mempty . pprint (toPrinter $ top $ expr var (top $ typ tyVar) tyVar) . addComments
+                         ppVar     = fromMaybe mempty . pprint (toPrinter var)
+                         ppTyVar   = fromMaybe mempty . pprint (toPrinter tyVar)
                       in continue (PL.State someReplState
                                         replConfigs
                                         editorSt
-                                        (newOutputState $ Text.lines $ (PLPrinter.render . ppError ppPattern ppType $ err))
+                                        (newOutputState $ Text.lines $ (PLPrinter.render . ppError ppPattern ppType ppExpr (ppTypeCtx document (ppTypeInfo ppType)) ppVar ppTyVar $ err))
                                         (typeCtxStateGivenReplState someReplState) -- someReplState' ?
                                         usageSt
                                         (Just OutputCursor))

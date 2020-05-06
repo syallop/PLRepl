@@ -23,10 +23,12 @@ import PL.TyVar
 import PL.Type hiding (Type)
 import PL.TypeCtx
 import PL.Var
+import PL.TypeCtx
+
 import PLGrammar
 import PLLispy
 import PLLispy.Level
-import PLPrinter (lineBreak,indent,pprint)
+import PLPrinter (lineBreak,indent,pprint,document)
 import PLPrinter.Doc (parens)
 import PLRepl.Repl
 import PLRepl.Repl.Lispy
@@ -74,7 +76,7 @@ data Event n
 
   | Read
   | Eval Text
-  | PrintFail (Error Type Pattern) SomeReplState
+  | PrintFail (Error Expr Type Pattern TypeCtx) SomeReplState
   | PrintSuccess (PLPrinter.Doc) SomeReplState
 
 main :: IO ()
@@ -145,8 +147,11 @@ handleEvent ev (State st) = case ev of
   PrintFail err newReplState
     -> let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
            ppPattern = fromMaybe mempty . pprint (toPrinter $ top $ pattern var tyVar) . addPatternComments
+           ppExpr = fromMaybe mempty . pprint (toPrinter $ top $ expr var (top $ typ tyVar) tyVar) . addComments
+           ppVar     = fromMaybe mempty . pprint (toPrinter var)
+           ppTyVar   = fromMaybe mempty . pprint (toPrinter tyVar)
         in noEff $ State st{ PL._replState    = newReplState
-                           , PL._outputState  = PL.newOutputState . Text.lines . PLPrinter.render . PL.ppError ppPattern ppType $ err
+                           , PL._outputState  = PL.newOutputState . Text.lines . PLPrinter.render . PL.ppError ppPattern ppType ppExpr (ppTypeCtx document (ppTypeInfo ppType)) ppVar ppTyVar $ err
                            , PL._typeCtxState = PL.typeCtxStateGivenReplState newReplState
                            , PL._focusOn      = Just OutputCursor
                            }
@@ -266,10 +271,11 @@ drawUI (State st) = div_
 
   drawTypeCtx
     :: Name
-    -> TypeCtx DefaultPhase
+    -> TypeCtx
     -> View (Event Name)
   drawTypeCtx _typCtxCursor typeCtx =
-    let txt = (PLPrinter.render . ppTypeCtx tyVar) $ typeCtx
+    let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
+        txt = (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) $ typeCtx
      in div_
           [ id_ "type-ctx"
           ]
@@ -328,39 +334,4 @@ randomExample = do
 
 exampleLispyTestCases :: Map Text Test.ExprTestCase
 exampleLispyTestCases = Test.mkTestCases Test.sources
-
-ppTypeCtx :: Grammar TyVar -> TypeCtx DefaultPhase -> PLPrinter.Doc
-ppTypeCtx tb = mconcat
-             . Map.foldrWithKey
-                 (\typeName typeInfo acc -> ppTypeName typeName : lineBreak : indent 2 (ppTypeInfo tb typeInfo) : lineBreak : lineBreak : acc)
-                 []
-             . typeCtxMapping
-
-ppTypeName :: PL.TypeName -> PLPrinter.Doc
-ppTypeName (PL.TypeName n) = PLPrinter.char '#' <> PLPrinter.text n
-
-ppTypeInfo :: Grammar TyVar -> TypeInfo DefaultPhase -> PLPrinter.Doc
-ppTypeInfo tb (TypeInfo isRecursive kind def) = mconcat
-    [ ppRec isRecursive
-    , lineBreak
-    , PLPrinter.text ":: ", ppKind kind
-    , lineBreak
-    , PLPrinter.text "= ", ppType tb def
-    ]
-
-ppRec :: Rec -> PLPrinter.Doc
-ppRec r = PLPrinter.text $ case r of
-  Rec -> "Rec"
-  NonRec -> "NonRec"
-
-ppKind :: Kind -> PLPrinter.Doc
-ppKind k = case k of
-  Kind
-    -> PLPrinter.text "KIND"
-  KindArrow from to
-    -> PLPrinter.char '^' <> parens (ppKind from) <> parens (ppKind to)
-
-ppType :: Grammar TyVar -> Type -> PLPrinter.Doc
-ppType tb = fromMaybe mempty . pprint (toPrinter (top $ typ tb)) . addTypeComments
-
 

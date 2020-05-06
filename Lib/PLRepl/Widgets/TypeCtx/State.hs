@@ -48,28 +48,6 @@ typeCtxText
   -> Text.Text
 typeCtxText = editorText
 
-ppTypeCtx :: Grammar TyVar -> TypeCtx DefaultPhase -> Doc
-ppTypeCtx phase = mconcat
-             . Map.foldrWithKey
-                 (\typeName typeInfo acc -> ppTypeName typeName : lineBreak : indent 2 (ppTypeInfo phase typeInfo) : lineBreak : lineBreak : acc)
-                 []
-             . typeCtxMapping
-
-ppTypeName :: TypeName -> Doc
-ppTypeName (TypeName n) = PLPrinter.char '#' <> PLPrinter.text n
-
-ppTermName :: TermName -> Doc
-ppTermName (TermName n) = PLPrinter.char '#' <> PLPrinter.text n
-
-ppTypeInfo :: Grammar TyVar -> TypeInfo DefaultPhase -> Doc
-ppTypeInfo tb (TypeInfo isRecursive kind def) = mconcat
-    [ ppRec isRecursive
-    , lineBreak
-    , PLPrinter.text ":: ", ppKind kind
-    , lineBreak
-    , PLPrinter.text "= ", ppType tb def
-    ]
-
 ppType :: Grammar TyVar -> Type -> Doc
 ppType tb = fromMaybe mempty . pprint (toPrinter (top $ typ tb)) . addTypeComments
 

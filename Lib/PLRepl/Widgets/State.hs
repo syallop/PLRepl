@@ -163,7 +163,10 @@ initialState initialFocus usage = State
 typeCtxStateGivenReplState
   :: SomeReplState
   -> TypeCtxState
-typeCtxStateGivenReplState (SomeReplState replState) = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx tyVar) . _typeCtx $ replState
+typeCtxStateGivenReplState (SomeReplState replState)
+  = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) . _typeCtx $ replState
+  where
+    ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
 
 instance Document a => Document [a] where
   document []     = mempty

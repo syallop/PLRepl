@@ -8,7 +8,7 @@ packages:
 - './Lib'
 - location:
     git: https://github.com/syallop/PLCore
-    commit: 528fda6c9eea1ea25bbbe07cc60b563da0e50fb7
+    commit: e6d38deebcfea8c732049729053239e9fc6371dc
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLEditor
@@ -16,7 +16,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLLispy
-    commit: 0e53b269a7853933886a9fbd056b642b164f2879
+    commit: c873447fb6aa77c98ffa6272320074d34e34009f
   extra-dep: true
 - location:
     git: https://github.com/syallop/PLParser
@@ -54,4 +54,5 @@ extra-deps:
 - data-clist-0.1.2.2@sha256:4d70add0a200a178853cd37c6469101bac3c36aebb3aa9c503ff225211b1a8c9
 - text-zipper-0.10.1@sha256:8b73a97a3717a17df9b0a722b178950c476ff2268ca5c583e99d010c94af849e
 - word-wrap-0.4.1@sha256:f72233b383ef569c557bfd9812cbb8e306c415ce509082c0bd15ee51c0239ccc
+- pretty-tree-0.1.0.0@sha256:49b0e17008f9d30328db2bcc2958f3a7b78d154d2335c2dbaa2073e237b524ae
 allow-newer: true
