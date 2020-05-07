@@ -108,7 +108,7 @@ main = run App{..}
 
     -- Root element for DOM diff
     mountPoint :: Maybe MisoString
-    mountPoint = Nothing
+    mountPoint = Just "repl"
 
 -- | Transform the state in response to an event with optional side effects.
 handleEvent :: Event Name -> State Name -> Effect (Event Name) (State Name)
