@@ -40,16 +40,25 @@ import PLLispy
 import PLLispy.Level
 import PLPrinter
 import PLRepl.Repl
-import qualified PL.Megaparsec as PLMega
 import qualified PLParser as PLParser
+import PLParser (Cursor,Expected)
 
 import Data.Text (Text)
 import Data.Maybe
 import Data.Monoid
 import qualified Data.Text as Text
 import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Data.Set (Set)
 
+import Control.Applicative
+import Data.Void
+import Reversible
+import Reversible.Iso
+import qualified PLGrammar as G
 import qualified Text.Megaparsec as Mega
+import qualified Text.Megaparsec.Char as Mega
+import qualified Control.Monad.Combinators.Expr as Mega
 
 -- | A ReplConfig for entire lispy expressions parameterised over individual
 -- Grammars for bindings, abstractions and type bindings and accepting a custom Read
@@ -140,29 +149,101 @@ ppParseResult ppA p = case p of
       -> text "Parsed: " <> ppA a <> text "with leftovers" <> document leftovers
 
     PLParser.ParseFailure failures cur0
-      -> mconcat $
-           [ text "Parse failure at:"
-           , lineBreak
+     -> let -- Collect expectations that occur at the same cursor position
+            collectedFailures :: Map.Map Cursor (Set Expected)
+            collectedFailures = collectFailures failures
 
-           , indent1 $ document cur0
-           , lineBreak
-           ]
-           ++
-           if null failures
-             then mempty
-             else [ text "The failures backtracked from were:"
-                  , lineBreak
-                  , indent1 . mconcat
-                            . map (\(cursor,expected) -> mconcat [ document cursor
-                                                                 , document expected
-                                                                 , lineBreak
-                                                                 , lineBreak
-                                                                 ]
-                                  )
-                            . Map.toList
-                            . PLParser.collectFailures
-                            $ failures
-                  ]
+            -- Ordered list of expectations, deepest first
+            failuresByDepth :: [(Cursor,Set Expected)]
+            failuresByDepth = Map.toDescList $ Map.delete cur0 $ collectedFailures
+
+            -- Expectations at the exact point the error is reported.
+            failureAtStop :: Set Expected
+            failureAtStop = fromMaybe Set.empty $ Map.lookup cur0 $ collectedFailures
+
+            -- The deepest set of expectations - this can be later
+            -- than the point the error is reported when backtracking
+            -- has occured before the failure.
+            deepestFailure :: Maybe (Cursor,Set Expected)
+            deepestFailure = case failuresByDepth of
+              []
+                -> Nothing
+              [d]
+                -> Just d
+
+            -- Failures between the reported error and the deepest
+            -- error are places we've backtracked from.
+            backtrackedFailures :: [(Cursor,Set Expected)]
+            backtrackedFailures = filter (\(c,_) -> c >= cur0) failuresByDepth
+
+            failuresBeforeStop :: [(Cursor,Set Expected)]
+            failuresBeforeStop = filter (\(c,_) -> c < cur0) failuresByDepth
+        in mconcat $
+             [ text "Parse failure at:"
+             , lineBreak, lineBreak
+             , indent 2 $ document cur0
+             , lineBreak
+             , if null failures
+                 then indent 2 $ text "For no known reason. Which is likely a bug on our part"
+                 else mconcat $
+                   [ case Set.toList failureAtStop of
+                       []
+                         -> text "Due to backtracked error"
+
+                       [e]
+                         -> text "Where we expected: " <> document e <> lineBreak
+
+                       (e:es)
+                         -> mconcat
+                              [ text "Where we expected:"
+                              , lineBreak
+                              , indent 2 $ document $ foldr PLParser.ExpectEither e es
+                              ]
+                   ]
+
+              , case backtrackedFailures of
+                  []
+                    -> text "Without having backtracked"
+
+                  (e:es)
+                    -> mconcat
+                         [ text "Having backtracked due to"
+                         , if null es
+                             then text " a single failure:"
+                             else text " several failures:"
+                         , lineBreak
+                         , indent 2 $ ppPossibilities (e:es)
+                         , lineBreak
+                         ]
+
+              , case failuresBeforeStop of
+                  []
+                    -> mempty
+                  (e:es)
+                    -> mconcat [ text "It's possible a mistake was made at one of these previous alternatives:"
+                               , indent 2 $ ppPossibilities failuresBeforeStop
+                               ]
+              ]
+  where
+    ppPossibilities :: [(Cursor, Set Expected)] -> Doc
+    ppPossibilities p = indent 2 $ mconcat . map (\(c,es) ->
+      case Set.toList es of
+        []
+          -> mempty
+        e:es
+          -> mconcat [ document $ c
+                     , lineBreak
+                     , document $ foldr PLParser.ExpectEither e es
+                     ]
+      ) $ p
+
+
+    collectFailures :: [(Expected,Cursor)] -> Map.Map Cursor (Set Expected)
+    collectFailures allFailures = foldr (\(expected,cursor) acc
+                                          -> Map.insertWith (<>) cursor (Set.singleton expected) acc
+                                        )
+                                        mempty
+                                        allFailures
 
 
 -- Convert a Grammar to a parser using Megaparsec.
@@ -171,13 +252,68 @@ megaparsecGrammarParser
   -> Text
   -> Repl o o
 megaparsecGrammarParser grammar =
-  let megaparsecParser = PLMega.toParser grammar
+  let megaparsecParser = toParser grammar
    in \txt -> case Mega.runParser megaparsecParser "" txt of
                 Left err
                   -> replError . EMsg . string. Mega.errorBundlePretty $ err
 
                 Right expr
                   -> pure expr
+  where
+    -- | Convert a Grammar to a Parser that accepts it.
+    toParser :: G.Grammar a -> Mega.Parsec Void Text a
+    toParser (Reversible r) = case r of
+      ReversibleInstr i
+        -> case i of
+             -- A single character if one is available.
+             G.GAnyChar
+               -> Mega.anySingle
+
+             -- Enhance a failing parse with a given Expect label.
+             G.GLabel l g
+               -> toParser g Mega.<?> (Text.unpack $ renderDocument l)
+
+             G.GTry g
+               -> Mega.try $ toParser g
+
+      -- Return the value.
+      RPure a
+        -> pure a
+
+      -- Fail with no Expectations.
+      REmpty
+        -> empty
+
+      -- If the left fails, try the right as if no input had been consumed.
+      RAlt g0 g1
+        -> toParser g0 <|> toParser g1
+
+      -- Parse the grammar if the iso succeeds.
+      RMap iso ga
+        -> rmapParser iso ga
+
+      -- Tuple the result of two successive parsers.
+      RAp ga gb
+        -> rapParser (toParser ga) (toParser gb)
+
+    rmapParser
+      :: Show a
+      => Iso a b
+      -> G.Grammar a
+      -> Mega.Parsec Void Text b
+    rmapParser iso g = do
+      a <- toParser g
+      case forwards iso a of
+        Nothing
+          -> fail "iso"
+        Just b
+          -> pure b
+
+    rapParser
+      :: Mega.Parsec Void Text a
+      -> Mega.Parsec Void Text b
+      -> Mega.Parsec Void Text (a, b)
+    rapParser pl pr = (,) <$> pl <*> pr
 
 -- Transform a parsed expr, its reduction and type into some output to print
 printerF

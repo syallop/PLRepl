@@ -1,53 +1,33 @@
-resolver: lts-14.20
+resolver: lts-15.11
 flags:
   haskeline:
     brick: true
 extra-package-dbs: []
 packages:
-- './Terminal'
-- './Lib'
-- location:
-    git: https://github.com/syallop/PLCore
-    commit: e6d38deebcfea8c732049729053239e9fc6371dc
-  extra-dep: true
-- location:
-    git: https://github.com/syallop/PLEditor
-    commit: 8f474ec94f444c3da6f4e467231e5cf03761b67e
-  extra-dep: true
-- location:
-    git: https://github.com/syallop/PLLispy
-    commit: c873447fb6aa77c98ffa6272320074d34e34009f
-  extra-dep: true
-- location:
-    git: https://github.com/syallop/PLParser
-    commit: 7adea4ba5ec67f7fee80f9903595e1ab825e313b
-  extra-dep: true
-- location:
-    git: https://github.com/syallop/PLGrammar
-    commit: 8583dfc6b56b88069fee00b9786da6f15f6d4cd0
-  extra-dep: true
-- location:
-    git: https://github.com/syallop/PLPrinter
-    commit: 65f4d3805c06fbbe0e4313f17a2129e5fe2187f9
-  extra-dep: true
-- location:
-    git: https://github.com/syallop/Reversible
-    commit: 84188a89af962716dc0534d552da715305cb0cf5
-  extra-dep: true
-- location:
-    git: https://github.com/syallop/PLLabel
-    commit: 9433cf7963e43b4df06f57939218956c3d2dacc4
-  extra-dep: true
-- location:
-    git: https://github.com/syallop/DSL-Compose.git
-    commit: 5a95ae855f3291aa3193a7424892035226b10d2f
-  extra-dep: true
-- location:
-    git: https://github.com/rootmos/haskeline.git
-    commit: bf8164bc747e299524548417f3e947cbd3d47f68
-  extra-dep: true
+- ./Terminal
+- ./Lib
 extra-deps:
-- megaparsec-7.0.4
+- git: https://github.com/syallop/PLCore
+  commit: 7b79bb2dc284563c437227c06e9e8447627d7f94
+- git: https://github.com/syallop/PLEditor
+  commit: eca85a4b7a0df4400e795e32a89ecbaa756c6567
+- git: https://github.com/syallop/PLLispy
+  commit: 28f8337f5b81cb7584093b57c6f7f7df0ada8f06
+- git: https://github.com/syallop/PLParser
+  commit: 8da016b4bcd88055fec656de0fbfa52f2087562b
+- git: https://github.com/syallop/PLGrammar
+  commit: ece33dda877ed6b2199ebc6528fdc825302b3978
+- git: https://github.com/syallop/PLPrinter
+  commit: 29c1fc4fe5f33086bed4855e016aa56aa80264af
+- git: https://github.com/syallop/Reversible
+  commit: 84188a89af962716dc0534d552da715305cb0cf5
+- git: https://github.com/syallop/PLLabel
+  commit: 678354d723effe569aae83623d25191c25e219a0
+- git: https://github.com/syallop/DSL-Compose.git
+  commit: 5a95ae855f3291aa3193a7424892035226b10d2f
+- git: https://github.com/rootmos/haskeline.git
+  commit: bf8164bc747e299524548417f3e947cbd3d47f68
+- megaparsec-8.0.0
 - parser-combinators-1.0.1
 - brick-0.46
 - config-ini-0.2.4.0@sha256:38a6d484d471c6fac81445de2eac8c4e8c82760962fca5491ae1c3bfca9c4047

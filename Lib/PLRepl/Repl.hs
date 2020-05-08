@@ -65,7 +65,6 @@ import PL.Type.Eq
 import PL.TypeCtx
 import PL.Pattern
 import PLLispy
-import qualified PL.Megaparsec as PLMega
 import qualified PLParser as PLParser
 
 import PLParser

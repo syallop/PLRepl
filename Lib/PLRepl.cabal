@@ -23,6 +23,7 @@ library
                      , containers
                      , directory
                      , megaparsec
+                     , parser-combinators
                      , mtl
                      , text
                      , transformers
