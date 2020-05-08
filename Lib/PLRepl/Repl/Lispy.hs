@@ -41,7 +41,8 @@ import PLLispy.Level
 import PLPrinter
 import PLRepl.Repl
 import qualified PLParser as PLParser
-import PLParser (Cursor,Expected)
+import PLParser
+import PLParser.Cursor
 
 import Data.Text (Text)
 import Data.Maybe
@@ -49,6 +50,7 @@ import Data.Monoid
 import qualified Data.Text as Text
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.List as List
 import Data.Set (Set)
 
 import Control.Applicative
@@ -140,6 +142,8 @@ plGrammarParser grammar =
     noTrailingCharacters :: Text -> Bool
     noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
 
+-- Pretty print a parse success or failure.
+-- Optimisations specific to the lispy grammar are used.
 ppParseResult
   :: (a -> Doc)
   -> PLParser.ParseResult a
@@ -181,48 +185,65 @@ ppParseResult ppA p = case p of
         in mconcat $
              [ text "Parse failure at:"
              , lineBreak, lineBreak
-             , indent 2 $ document cur0
+             , indent 2 $ ppCursor cur0
              , lineBreak
              , if null failures
-                 then indent 2 $ text "For no known reason. Which is likely a bug on our part"
+                 then indent 2 $ mconcat
+                   [ text "For no known reason. Which is likely a bug on our part"
+                   , lineBreak
+                   ]
                  else mconcat $
                    [ case Set.toList failureAtStop of
                        []
                          -> text "Due to backtracked error"
 
+                       -- TODO: This occurs when backtracking from alternatives
+                       -- which all fail. There may be a better way to
+                       -- encapsulate this state.
+                       [ExpectFail]
+                         -> mempty
+
                        [e]
-                         -> text "Where we expected: " <> document e <> lineBreak
+                         -> text "Where we allowed: " <> ppExpected e <> lineBreak
 
                        (e:es)
                          -> mconcat
-                              [ text "Where we expected:"
+                              [ text "Where we allowed:"
                               , lineBreak
-                              , indent 2 $ document $ foldr PLParser.ExpectEither e es
+                              , indent 2 $ ppExpected $ foldr PLParser.ExpectEither e es
                               ]
                    ]
 
+              -- Describe failures we've backtracked from.
+              --
+              -- The deepest, and first failure seems to be the mostly likely to
+              -- be the cause of an error so it is reported first.
+              --
+              -- TODO: Should it be highlighted more prominently?
+              --
+              -- It's possible shallower backtracks were the cause of an error
+              -- so we include them.
+              -- TODO: This can report a lot of noise so we should attempt to
+              -- validate how useful these are.
               , case backtrackedFailures of
+                  -- No Backtracking
                   []
-                    -> text "Without having backtracked"
+                    -> mempty
 
                   (e:es)
                     -> mconcat
-                         [ text "Having backtracked due to"
-                         , if null es
-                             then text " a single failure:"
-                             else text " several failures:"
+                         [ if null es
+                             then text "After backtracking from:"
+                             else text "After backtracking from several possibilities:"
                          , lineBreak
                          , indent 2 $ ppPossibilities (e:es)
                          , lineBreak
                          ]
 
-              , case failuresBeforeStop of
-                  []
-                    -> mempty
-                  (e:es)
-                    -> mconcat [ text "It's possible a mistake was made at one of these previous alternatives:"
-                               , indent 2 $ ppPossibilities failuresBeforeStop
-                               ]
+              -- TODO: Is it ever helpful to show prior alternatives we moved
+              -- past?
+              -- If applying the suggestion makes the entire expression valid
+              -- it's potentially worthwhile displaying.
               ]
   where
     ppPossibilities :: [(Cursor, Set Expected)] -> Doc
@@ -231,9 +252,12 @@ ppParseResult ppA p = case p of
         []
           -> mempty
         e:es
-          -> mconcat [ document $ c
+          -> mconcat [ ppCursor $ c
                      , lineBreak
-                     , document $ foldr PLParser.ExpectEither e es
+                     , text "Expected: "
+                     , ppExpected $ foldr PLParser.ExpectEither e es
+                     , lineBreak
+                     , lineBreak
                      ]
       ) $ p
 
@@ -244,6 +268,91 @@ ppParseResult ppA p = case p of
                                         )
                                         mempty
                                         allFailures
+    ppPos :: Pos -> Doc
+    ppPos (Pos t l c) = mconcat
+      [ text "Line:     ", int l, lineBreak
+      , text "Character:", int c, lineBreak
+      , text "Total:    ", int t, lineBreak
+      ]
+
+    ppCursor :: Cursor -> Doc
+    ppCursor (Cursor prev next pos@(Pos t l c)) =
+      -- TODO: This is.. suboptimal
+      let (untilLineEnd,_rest) = Text.span (/= '\n') next
+          beforeLines = Text.splitOn "\n" $ (Text.concat . reverse $ prev) <> untilLineEnd
+          line = last beforeLines
+
+          -- Convert from 0-index to 1-index
+          lineNumber = l + 1
+          charNumber = c + 1
+
+          lineNumberSize = length $ show lineNumber
+          prevGutter     = text " " <> text (Text.replicate lineNumberSize " ") <> text "│"
+          gutter         = text " " <> int lineNumber <> text "│ "
+          pointer        = text " " <> text (Text.replicate lineNumberSize " ") <> text "└" <> text (Text.replicate charNumber "─") <> text "┴"
+       in mconcat
+            [ prevGutter
+            , lineBreak
+
+            , gutter
+            , rawText line
+            , lineBreak
+
+            , pointer
+            ]
+
+    ppExpected :: Expected -> Doc
+    ppExpected = (\docs -> case docs of
+                   []
+                     -> mempty
+                   ds
+                     -> bulleted ds
+
+                 )
+               . flattenExpectedDoc
+
+    -- Returns alternatives
+    flattenExpectedDoc :: Expected -> [Doc]
+    flattenExpectedDoc e = List.nub $ case e of
+      ExpectEither es0 es1
+        -> flattenExpectedDoc es0 <> flattenExpectedDoc es1
+
+      ExpectFail
+        -> []
+
+      ExpectText txt
+        -> [text txt]
+
+      -- For a predicate with a descriptive label, the label is enough.
+      ExpectPredicate (Label lTxt Descriptive) _
+        -> [text $ "_PREDICATE_" <> lTxt]
+
+      -- For an enhancing label, we still want to see the rest of the definition.
+      ExpectPredicate (Label lTxt Enhancing) mE
+        -> map ((text "_PREDICATE_" <> text lTxt) <>) $ maybe [] flattenExpectedDoc mE
+
+      ExpectAnything
+        -> [text "ANYTHING"]
+
+      ExpectN i e
+        -> [text $ "_EXACTLY_" <> (Text.pack . show $ i) <> "_"
+           ,mconcat . flattenExpectedDoc $ e
+           ]
+
+      -- A descriptive label is sufficient.
+      ExpectLabel (Label lTxt Descriptive) e
+        -> [text lTxt]
+
+      -- An enhancing label requires the rest of the definition.
+      ExpectLabel (Label lTxt Enhancing) e
+        -> [text $ lTxt <> " " <> (render . mconcat . flattenExpectedDoc $ e)
+           ]
+
+      ExpectThen e0 e1
+        -> [ text . render . mconcat . flattenExpectedDoc $ e0
+           , text "_THEN_"
+           , text . render . mconcat . flattenExpectedDoc $ e1
+           ]
 
 
 -- Convert a Grammar to a parser using Megaparsec.
