@@ -8,11 +8,11 @@ packages:
 - ./Lib
 extra-deps:
 - git: https://github.com/syallop/PLCore
-  commit: 7b79bb2dc284563c437227c06e9e8447627d7f94
+  commit: 90a329f21793c17f986d7baf7a415f66aedad6fa
 - git: https://github.com/syallop/PLEditor
   commit: eca85a4b7a0df4400e795e32a89ecbaa756c6567
 - git: https://github.com/syallop/PLLispy
-  commit: 28f8337f5b81cb7584093b57c6f7f7df0ada8f06
+  commit: e3d7c88e8432af95b00f222d61799d81d44e3f03
 - git: https://github.com/syallop/PLParser
   commit: 8da016b4bcd88055fec656de0fbfa52f2087562b
 - git: https://github.com/syallop/PLGrammar
@@ -35,4 +35,6 @@ extra-deps:
 - text-zipper-0.10.1@sha256:8b73a97a3717a17df9b0a722b178950c476ff2268ca5c583e99d010c94af849e
 - word-wrap-0.4.1@sha256:f72233b383ef569c557bfd9812cbb8e306c415ce509082c0bd15ee51c0239ccc
 - pretty-tree-0.1.0.0@sha256:49b0e17008f9d30328db2bcc2958f3a7b78d154d2335c2dbaa2073e237b524ae
+- base58-bytestring-0.1.0@sha256:a1da72ee89d5450bac1c792d9fcbe95ed7154ab7246f2172b57bd4fd9b5eab79,1913
+- hashing-0.1.0.1@sha256:98861f16791946cdf28e3c7a6ee9ac8b72d546d6e33c569c7087ef18253294e7,2816
 allow-newer: true

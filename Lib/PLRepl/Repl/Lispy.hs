@@ -31,6 +31,7 @@ import PL.Binds
 import PL.Error
 import PL.Expr
 import PL.Kind
+import PL.Hash
 import PL.TyVar
 import PL.Commented
 import PL.Type
@@ -453,10 +454,14 @@ printerF ppType = \inputTxt parsed mEval -> do
            , lineBreak
            , indent 1 . ppExpr $ redExpr
            , lineBreak, lineBreak
+           , indent 1 . text . showBase58 . hash $ redExpr
+           , lineBreak, lineBreak
 
            , text "with type:"
            , lineBreak
            , indent 1 $ ppType ty
-           , lineBreak
+           , lineBreak, lineBreak
+           , indent 1 . text . showBase58 . hash $ ty
+           , lineBreak, lineBreak
            ]
 
