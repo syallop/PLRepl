@@ -172,7 +172,7 @@ ppParseResult ppA p = case p of
             deepestFailure = case failuresByDepth of
               []
                 -> Nothing
-              [d]
+              (d:_)
                 -> Just d
 
             -- Failures between the reported error and the deepest
