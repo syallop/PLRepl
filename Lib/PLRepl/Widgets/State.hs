@@ -44,6 +44,9 @@ import PL.Expr
 import PL.Commented
 import PL.TyVar
 import PL.Type
+import PL.Store
+import PL.Hash
+import PL.HashStore
 import PL.TypeCtx
 import PL.Var
 import PL.Test.Shared
@@ -113,8 +116,12 @@ data State n = State
 --
 -- This function is a particular mess and is currently being used to drive
 -- testing by switching out the repl config and trialing input.
-initialState :: Maybe n -> [Text] -> State n
-initialState initialFocus usage = State
+initialState
+  :: Maybe n
+  -> [Text]
+  -> HashStore CommentedExpr
+  -> State n
+initialState initialFocus usage backingStorage = State
   { _replState    = initialReplState
   , _replConfigs  = initialReplConfigs
   , _editorState  = emptyEditorState
@@ -128,12 +135,15 @@ initialState initialFocus usage = State
     -- few example types.
     initialReplState :: SomeReplState
     initialReplState =
-      let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx = (emptyReplState :: ReplState ())
-       in SomeReplState $ ReplState (exprConfig)
-                                    exprBindCtx
-                                    typeBindCtx
-                                    typeBindings
-                                    sharedTypeCtx
+      let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx _exprStore = (emptyReplState :: ReplState ())
+       in SomeReplState $ ReplState
+            { _replConfig   = exprConfig
+            , _exprBindCtx  = exprBindCtx
+            , _typeBindCtx  = typeBindCtx
+            , _typeBindings = typeBindings
+            , _typeCtx      = sharedTypeCtx
+            , _exprStore    = backingStorage
+            }
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState
 

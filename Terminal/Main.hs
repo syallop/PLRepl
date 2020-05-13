@@ -3,6 +3,8 @@
   , ImplicitParams
   , OverloadedStrings
   , TemplateHaskell
+  , TypeSynonymInstances
+  , FlexibleInstances
   #-}
 {-|
 Module      : Main
@@ -54,9 +56,16 @@ import PLLispy
 import PLLispy.Expr
 import PLLispy.Level
 import PL.TyVar
+import PL.Expr
 import PL.Commented
 import PL.Type hiding (void)
 import PL.Var
+import PL.HashStore
+import PL.Serialize
+import PL.Store
+import PL.Store.Nested
+import PL.Store.File
+import PL.Store.Memory
 import PL.Error
 import PL.TypeCtx
 import PL.Kind
@@ -69,12 +78,17 @@ import qualified PLLispy.Test.Sources.Expr as Test
 
 import PLGrammar
 
+import qualified PLParser as PLParser
+import qualified PLPrinter as PLPrinter
+import qualified PLGrammar as G
+import qualified PLLispy as L
+import qualified PLLispy.Level as L
 import PLPrinter
 import PLPrinter.Doc
 
 import qualified PLEditor as E
 
-import Brick
+import Brick hiding (App)
 import Brick.BChan
 import Brick.Widgets.Border
 import Brick.Widgets.Border.Style
@@ -89,6 +103,7 @@ import Control.Monad.IO.Class
 import Control.Monad.State.Lazy
 import Data.List (isPrefixOf)
 import Data.Text (Text)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import System.Directory
 import System.Exit
 import qualified Data.Text as Text
@@ -99,13 +114,13 @@ import Data.Maybe
 
 -- | The ReplApp is a Brick App which handles `Events` to update `State`
 -- making use of `Name`'s to name resources.
-type ReplApp = App (PL.State PL.Name) (PL.Event PL.Name) PL.Name
+type ReplApp = Brick.App (PL.State PL.Name) (PL.Event PL.Name) PL.Name
 
 -- | replApp is a Brick app providing a repl for PL.
 replApp
   :: BChan (PL.Event PL.Name)
   -> ReplApp
-replApp chan = App
+replApp chan = Brick.App
   { -- No actions needed on startup.
     appStartEvent = pure
 
@@ -250,11 +265,11 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
               let ?eb             = var
                   ?abs            = typ tyVar
                   ?tb             = tyVar
-              let (someReplState',eRes) = case someReplState of
-                                            SomeReplState replState
-                                              -> let step = PL.replStep txt
-                                                     (nextState, result) = _unRepl step replState
-                                                  in (SomeReplState nextState, result)
+              (someReplState',eRes) <- liftIO $ case someReplState of
+                                         SomeReplState replState
+                                           -> do let step = PL.replStep txt
+                                                 (nextState, result) <- _unRepl step replState
+                                                 pure (SomeReplState nextState, result)
               case eRes of
                 -- Some repl error
                 Left err
@@ -458,8 +473,59 @@ drawUI st =
 main :: IO ()
 main = run
 
+-- Hijack the Lispy Parser/ Printer to define a missing serialize instance for
+-- expressions to allow us to store and retrieve them from the filesystem.
+--
+-- Note that this means we cannot share filestores generated with this instance
+-- with anything using a different orphan instance.
+--
+-- TODO: Remove when Exprs gain a canonical storage format.
+instance Serialize Expr where
+  serialize expr = serialize $ addComments expr
+  deserialize bs = stripComments <$> deserialize bs
+instance Serialize CommentedExpr where
+  serialize expr = case pprint (toPrinter grammar) expr of
+    Nothing
+      -> error "Failed to Serialize an expression via a pretty-printer"
+
+    Just doc
+      -> encodeUtf8 . PLPrinter.render $ doc
+    where
+      grammar :: G.Grammar CommentedExpr
+      grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
+
+  -- TODO: It might be nice to be able to fail with a reason when serialization
+  -- is unsuccessful.
+  deserialize bs = case PLParser.runParser (toParser grammar) $ decodeUtf8 bs of
+    PLParser.ParseFailure _expected _cursor
+      -> Nothing
+    PLParser.ParseSuccess expr cursor
+      | noTrailingCharacters $ PLParser.remainder cursor
+      -> Just expr
+
+      | otherwise
+      -> Nothing
+    where
+      noTrailingCharacters :: Text -> Bool
+      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
+
+      grammar :: G.Grammar CommentedExpr
+      grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
+
 run :: IO ()
 run = do
+  -- Backing storage is a memory cache over the filesystem. We use this to back
+  -- a HashStore for expressions, allowing them to be persisted across
+  -- invocations of the REPL.
+  --
+  -- We use an orphan instance to serialize Exprs meaning the filestore cannot
+  -- easily be shared. We guard against this by nesting under a '/lispy'
+  -- subdirectory.
+  --
+  -- Ideally a canonical serialization format would exist.
+  let storage = newNestedStore newEmptyMemoryStore . newFileStore ".pl/lispy/expr" $ Just 32
+      exprStore = newHashStore storage
+
   -- Buffer events
   -- Hitting the buffer causes a STM lock up.
   -- TODO:
@@ -469,7 +535,7 @@ run = do
   --   - Pasting small lines. Ideally paste events would be handled as one event
   --     rather than as an event to insert each individual character.
   evChan <- newBChan 1024
-  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) (initialState (Just EditorCursor) usage)
+  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) (initialState (Just EditorCursor) usage exprStore)
 
 usage :: [Text]
 usage =

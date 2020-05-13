@@ -59,6 +59,9 @@ import PL.Kind
 import PL.Var
 import PL.Name
 import PL.Reduce
+import PL.Hash
+import PL.HashStore
+import PL.Store
 import PL.TyVar
 import PL.Type hiding (parens)
 import PL.Type.Eq
@@ -127,13 +130,11 @@ emptyReplConfig = ReplConfig
 -- | The current st of the repl is a consistent view of type and expression bindings.
 data ReplState o = ReplState
   { _replConfig   :: ReplConfig o
-
-  , _exprBindCtx  :: BindCtx Var Type -- Expr bindings have types
-  , _typeBindCtx  :: BindCtx TyVar Kind     -- Type bindings have kinds
-
-  , _typeBindings :: Bindings Type -- Type bindings may have a bound or unbound type
-
-  , _typeCtx      :: TypeCtx -- Names can be given to types
+  , _exprBindCtx  :: BindCtx Var Type   -- Expr bindings have types
+  , _typeBindCtx  :: BindCtx TyVar Kind -- Type bindings have kinds
+  , _typeBindings :: Bindings Type      -- Type bindings may have a bound or unbound type
+  , _typeCtx      :: TypeCtx            -- Names can be given to type definitions
+  , _exprStore    :: HashStore o        -- Exprs can be stored by their hash
   }
 
 -- SomeReplState is a ReplState where the type of Grammar has been forgotten.
@@ -150,6 +151,7 @@ emptyReplState = ReplState
   , _typeBindings = emptyBindings
 
   , _typeCtx     = mempty
+  , _exprStore   = error "No HashStore defined"
   }
 
 -- | A Repl has replst as state which it always returns alongside a successful
@@ -161,13 +163,13 @@ emptyReplState = ReplState
 -- 'o' is the output type the grammar specifies.
 -- 'a' is the final result type.
 newtype Repl o a = Repl
-  {_unRepl :: ReplState o -> (ReplState o, Either (Error Expr Type Pattern TypeCtx) a)}
+  {_unRepl :: ReplState o -> IO (ReplState o, Either (Error Expr Type Pattern TypeCtx) a)}
 
 instance Functor (Repl o) where
-  fmap f (Repl r) = Repl $ \st -> let (st',res) = r st
-                                    in (st', case res of
-                                                Left err -> Left err
-                                                Right a  -> Right $ f a)
+  fmap f (Repl r) = Repl $ \st -> do (st',res) <- r st
+                                     pure (st', case res of
+                                                  Left err -> Left err
+                                                  Right a  -> Right $ f a)
 
 instance Applicative (Repl o) where
   pure = return
@@ -175,11 +177,11 @@ instance Applicative (Repl o) where
 
 
 instance Monad (Repl o) where
-  return a = Repl $ \st -> (st,Right a)
+  return a = Repl $ \st -> pure (st,Right a)
 
-  (Repl f) >>= fab = Repl $ \st -> let (st',res) = f st
-                                     in case res of
-                                          Left err -> (st',Left err)
+  (Repl f) >>= fab = Repl $ \st -> do (st',res) <- f st
+                                      case res of
+                                          Left err -> pure (st',Left err)
                                           Right a  -> let Repl g = fab a
                                                          in g st'
 
@@ -187,13 +189,13 @@ instance Monad (Repl o) where
 replError
   :: Error Expr Type Pattern TypeCtx
   -> Repl o x
-replError err = Repl $ \st -> (st,Left err)
+replError err = Repl $ \st -> pure (st,Left err)
 
 -- Type check an expression in the repl context.
 replTypeCheck
   :: Expr
   -> Repl o Type
-replTypeCheck expr = Repl $ \st ->
+replTypeCheck expr = Repl $ \st -> pure $
   case exprType (_exprBindCtx st)
                 (_typeBindCtx st)
                 (_typeBindings st)
@@ -207,7 +209,7 @@ replTypeCheck expr = Repl $ \st ->
 -- Get the type context the repl is using to parse/ evaluate types.
 replTypeCtx
   :: Repl o TypeCtx
-replTypeCtx = Repl $ \st -> (st, Right $ _typeCtx st)
+replTypeCtx = Repl $ \st -> pure (st, Right $ _typeCtx st)
 
 -- Reduce an expression in the repl context.
 replReduce
@@ -244,10 +246,29 @@ replEval a = Repl $ \replState ->
       Repl replF = evalF a
    in replF replState
 
+replStore
+  :: HashAlgorithm
+  -> o
+  -> Repl o (StoreResult o, Hash)
+replStore alg o = Repl $ \replState -> do
+  let exprStore = _exprStore replState
+  mRes <- storeByHash (_exprStore replState) alg o
+  pure $ case mRes of
+    Nothing
+      -> (replState, Left . EMsg . text $ "Failed to store expression in store")
+
+    Just (exprStore', res, hashKey)
+      -> (replState{_exprStore = exprStore'}, Right (res, hashKey))
+
+-- | Acquire the Grammar the Repl is using to parse/ print 'o's.
 replGrammar
   :: Repl o (Grammar o)
-replGrammar = Repl $ \replState -> (replState, Right . _someGrammar . _replConfig $ replState)
+replGrammar = Repl $ \replState -> pure (replState, Right . _someGrammar . _replConfig $ replState)
 
+-- | Defer to the print function to print:
+-- - The original text supplied by the user
+-- - A parsed thing
+-- - A possible expression and type it reduced to.
 replPrint
   :: Print o
 replPrint originalTxt a mEvaluated = Repl $ \replState ->
@@ -264,5 +285,7 @@ replStep
 replStep input = do
   parsedOutput <- replRead input
   mEvaluated   <- replEval parsedOutput
+
+  replStore SHA512 parsedOutput
   replPrint input parsedOutput (fmap (\(expr,typ) -> (addComments expr,addTypeComments typ)) mEvaluated)
 
