@@ -1,4 +1,4 @@
-name:                PLReplJs
+name:                PLReplJS
 version:             0.1.0.0
 synopsis:            JS based PL REPL built using ghcjs and miso
 category:            Web
@@ -7,6 +7,7 @@ cabal-version:       >=1.10
 
 executable client
   main-is:             Main.hs
+  other-modules:       PLReplJS.LocalStorage
   ghcjs-options:
     -dedupe
   build-depends:       base
@@ -16,11 +17,13 @@ executable client
                      , containers
                      , ghcjs-base
                      , ghcjs-prim
+                     , filepath-bytestring
 
                      , PL
                      , PLRepl
                      , PLEditor
                      , PLLispy
+                     , PLParser
                      , PLPrinter
                      , PLGrammar
 

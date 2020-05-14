@@ -42,8 +42,15 @@ let
     inherit DSL-Compose;
   };
 
+  filepath-bytestringSrc = builtins.fetchGit {
+    url = "git://git.joeyh.name/haskell-filepath-bytestring.git";
+    ref = "master";
+  };
+  filepath-bytestring = pkgs.haskell.packages.ghcjs.callCabal2nix "filepath-bytestring" filepath-bytestringSrc {
+  };
+
   PL = pkgs.haskell.packages.ghcjs.callCabal2nix "PL" (srcFilter ../../Core) {
-    inherit PLGrammar PLPrinter Reversible;
+    inherit PLGrammar PLPrinter Reversible filepath-bytestring;
   };
 
   PLEditor = pkgs.haskell.packages.ghcjs.callCabal2nix "PLEditor" (srcFilter ../../Editor) {
@@ -58,7 +65,7 @@ let
   };
 in
 {
-  PLReplJs = pkgs.haskell.packages.ghcjs.callCabal2nix "PLReplJs" (srcFilter ./.) {
-    inherit PL PLRepl PLLispy PLEditor PLPrinter PLGrammar;
+  PLReplJS = pkgs.haskell.packages.ghcjs.callCabal2nix "PLReplJS" (srcFilter ./.) {
+    inherit PL PLRepl PLLispy PLEditor PLPrinter PLParser PLGrammar filepath-bytestring;
   };
 }

@@ -2,8 +2,13 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Main where
+
+-- | Our modules
+import PLReplJS.LocalStorage
 
 -- | Miso framework import
 import Miso
@@ -24,6 +29,13 @@ import PL.Type hiding (Type)
 import PL.TypeCtx
 import PL.Var
 import PL.TypeCtx
+import PL.Store
+import PL.Store.Nested
+import PL.Store.File
+import PL.Store.Memory
+import PL.Hash
+import PL.HashStore
+import PL.Serialize
 
 import PLGrammar
 import PLLispy
@@ -34,6 +46,7 @@ import PLRepl.Repl
 import PLRepl.Repl.Lispy
 import PLRepl.Widgets.Event hiding (Event)
 import PLRepl.Widgets.Name
+
 import qualified PL as PL
 import qualified PL.Expr as PL
 import qualified PL.Name as PL
@@ -46,10 +59,17 @@ import qualified PLPrinter
 import qualified PLRepl.Widgets.Event as PL
 import qualified PLRepl.Widgets.State as PL
 
+import qualified PLParser as PLParser
+import qualified PLPrinter as PLPrinter
+import qualified PLGrammar as G
+import qualified PLLispy as L
+import qualified PLLispy.Level as L
+
 -- Other dependencies
 import Data.Map (Map)
 import Data.Maybe
 import Data.Text (Text)
+import Data.Text.Encoding
 import System.Random
 import qualified Data.Map as Map
 import qualified Data.Text as Text
@@ -80,7 +100,9 @@ data Event n
   | PrintSuccess (PLPrinter.Doc) SomeReplState
 
 main :: IO ()
-main = run App{..}
+main = do
+
+  run App{..}
   where
     run :: Eq (State Name) => App (State Name) (Event Name) -> JSM ()
     run = startApp
@@ -89,8 +111,23 @@ main = run App{..}
     initialAction :: Event Name
     initialAction = PLEvent . EditorEv . InsertText . Test._parsesFrom . snd . (!! 0) . Map.toList $ exampleLispyTestCases
 
+    -- Backing storage is a memory cache over LocalStorage. We use this to back
+    -- a HashStore for expressions, allowing them to be persisted across
+    -- invocations of the REPL.
+    --
+    -- We use an orphan instance to serialize Exprs meaning the LocalStorage cannot
+    -- easily be shared. We guard against this by nesting under a '/lispy'
+    -- namespace.
+    --
+    -- Ideally a canonical serialization format would exist.
+    storage :: NestedStore MemoryStore LocalStorageStore Hash CommentedExpr
+    storage = newNestedStore newEmptyMemoryStore . newLocalStorageStore $ "lispy/expr"
+
+    exprStore :: HashStore CommentedExpr
+    exprStore = newHashStore storage
+
     model :: State Name
-    model = State $ PL.initialState (Just EditorCursor) usage
+    model = State $ PL.initialState (Just EditorCursor) usage exprStore
 
     update :: Event Name -> State Name -> Effect (Event Name) (State Name)
     update = handleEvent
@@ -109,6 +146,45 @@ main = run App{..}
     -- Root element for DOM diff
     mountPoint :: Maybe MisoString
     mountPoint = Just "repl"
+
+-- Hijack the Lispy Parser/ Printer to define a missing serialize instance for
+-- expressions to allow us to store and retrieve them from the filesystem.
+--
+-- Note that this means we cannot share filestores generated with this instance
+-- with anything using a different orphan instance.
+--
+-- TODO: Remove when Exprs gain a canonical storage format.
+instance Serialize Expr where
+  serialize expr = serialize $ addComments expr
+  deserialize bs = stripComments <$> deserialize bs
+instance Serialize CommentedExpr where
+  serialize expr = case pprint (toPrinter grammar) expr of
+    Nothing
+      -> error "Failed to Serialize an expression via a pretty-printer"
+
+    Just doc
+      -> encodeUtf8 . PLPrinter.render $ doc
+    where
+      grammar :: G.Grammar CommentedExpr
+      grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
+
+  -- TODO: It might be nice to be able to fail with a reason when serialization
+  -- is unsuccessful.
+  deserialize bs = case PLParser.runParser (toParser grammar) $ decodeUtf8 bs of
+    PLParser.ParseFailure _expected _cursor
+      -> Nothing
+    PLParser.ParseSuccess expr cursor
+      | noTrailingCharacters $ PLParser.remainder cursor
+      -> Just expr
+
+      | otherwise
+      -> Nothing
+    where
+      noTrailingCharacters :: Text -> Bool
+      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
+
+      grammar :: G.Grammar CommentedExpr
+      grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
 
 -- | Transform the state in response to an event with optional side effects.
 handleEvent :: Event Name -> State Name -> Effect (Event Name) (State Name)
@@ -132,16 +208,17 @@ handleEvent ev (State st) = case ev of
 
   -- Attempt to evaluate text
   Eval txt
-    -> let (someReplState',eRes) = case PL._replState st of
-                                   SomeReplState replState
-                                     -> let step = replStep txt
-                                            (nextState, result) = _unRepl step replState
-                                         in (SomeReplState nextState, result)
-        in case eRes of
+    -> (State st) <# do
+         (someReplState',eRes) <- case PL._replState st of
+                                      SomeReplState replState
+                                        -> do let step = replStep txt
+                                              (nextState, result) <- _unRepl step replState
+                                              pure (SomeReplState nextState, result)
+         case eRes of
              Left err
-               -> (State st) <# (pure $ PrintFail err someReplState')
+               -> pure $ PrintFail err someReplState'
              Right a
-               -> (State st) <# (pure $ PrintSuccess a someReplState')
+               -> pure $ PrintSuccess a someReplState'
 
   -- Failed to evaluate text
   PrintFail err newReplState
@@ -334,4 +411,5 @@ randomExample = do
 
 exampleLispyTestCases :: Map Text Test.ExprTestCase
 exampleLispyTestCases = Test.mkTestCases Test.sources
+
 
