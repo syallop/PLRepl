@@ -28,7 +28,7 @@ import PL.TyVar
 import PL.Type hiding (Type)
 import PL.TypeCtx
 import PL.Var
-import PL.TypeCtx
+import PL.TypeCheck
 import PL.Store
 import PL.Store.Nested
 import PL.Store.File
@@ -301,7 +301,7 @@ drawUI (State st) = div_
       [ id_ "context-widgets"
       ]
       [ drawTypeCtx TypeCtxCursor (case PL._replState st of
-                                     SomeReplState replState -> _typeCtx replState
+                                     SomeReplState replState -> _typeCtx . _typeCheckCtx $ replState
                                   )
       , drawUsage UsageCursor (PL._usageState st)
       ]

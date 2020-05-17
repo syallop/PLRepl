@@ -49,6 +49,7 @@ import PL.Hash
 import PL.HashStore
 import PL.TypeCtx
 import PL.Var
+import PL.TypeCheck
 import PL.Test.Shared
 
 import PLLispy
@@ -135,13 +136,10 @@ initialState initialFocus usage backingStorage = State
     -- few example types.
     initialReplState :: SomeReplState
     initialReplState =
-      let ReplState _ exprBindCtx typeBindCtx typeBindings typeCtx _exprStore = (emptyReplState :: ReplState ())
+      let ReplState _ typeCheckCtx _exprStore = (emptyReplState :: ReplState ())
        in SomeReplState $ ReplState
             { _replConfig   = exprConfig
-            , _exprBindCtx  = exprBindCtx
-            , _typeBindCtx  = typeBindCtx
-            , _typeBindings = typeBindings
-            , _typeCtx      = sharedTypeCtx
+            , _typeCheckCtx = typeCheckCtx{_typeCtx = sharedTypeCtx}
             , _exprStore    = backingStorage
             }
 
@@ -174,7 +172,7 @@ typeCtxStateGivenReplState
   :: SomeReplState
   -> TypeCtxState
 typeCtxStateGivenReplState (SomeReplState replState)
-  = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) . _typeCtx $ replState
+  = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) . _typeCtx . _typeCheckCtx $ replState
   where
     ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
 

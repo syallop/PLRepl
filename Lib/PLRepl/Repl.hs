@@ -61,6 +61,7 @@ import PL.Name
 import PL.Reduce
 import PL.Hash
 import PL.HashStore
+import PL.TypeCheck
 import PL.Store
 import PL.TyVar
 import PL.Type hiding (parens)
@@ -130,10 +131,7 @@ emptyReplConfig = ReplConfig
 -- | The current st of the repl is a consistent view of type and expression bindings.
 data ReplState o = ReplState
   { _replConfig   :: ReplConfig o
-  , _exprBindCtx  :: BindCtx Var Type   -- Expr bindings have types
-  , _typeBindCtx  :: BindCtx TyVar Kind -- Type bindings have kinds
-  , _typeBindings :: Bindings Type      -- Type bindings may have a bound or unbound type
-  , _typeCtx      :: TypeCtx            -- Names can be given to type definitions
+  , _typeCheckCtx :: TypeCheckCtx
   , _exprStore    :: HashStore o        -- Exprs can be stored by their hash
   }
 
@@ -145,13 +143,8 @@ emptyReplState
   :: ReplState o
 emptyReplState = ReplState
   { _replConfig   = emptyReplConfig
-  , _exprBindCtx  = emptyCtx
-  , _typeBindCtx  = emptyCtx
-
-  , _typeBindings = emptyBindings
-
-  , _typeCtx     = mempty
-  , _exprStore   = error "No HashStore defined"
+  , _typeCheckCtx = topTypeCheckCtx mempty
+  , _exprStore    = error "No HashStore defined"
   }
 
 -- | A Repl has replst as state which it always returns alongside a successful
@@ -196,10 +189,7 @@ replTypeCheck
   :: Expr
   -> Repl o Type
 replTypeCheck expr = Repl $ \st -> pure $
-  case exprType (_exprBindCtx st)
-                (_typeBindCtx st)
-                (_typeBindings st)
-                (_typeCtx st) expr of
+  case exprType (_typeCheckCtx st) expr of
     Left err
       -> (st,Left err)
 
@@ -209,7 +199,7 @@ replTypeCheck expr = Repl $ \st -> pure $
 -- Get the type context the repl is using to parse/ evaluate types.
 replTypeCtx
   :: Repl o TypeCtx
-replTypeCtx = Repl $ \st -> pure (st, Right $ _typeCtx st)
+replTypeCtx = Repl $ \st -> pure (st, Right . _typeCtx . _typeCheckCtx $ st)
 
 -- Reduce an expression in the repl context.
 replReduce
