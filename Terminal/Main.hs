@@ -55,6 +55,8 @@ import PLRepl.Widgets.State as PL
 import PLLispy
 import PLLispy.Expr
 import PLLispy.Level
+import PL.Hash
+import PL.CodeStore
 import PL.TyVar
 import PL.Expr
 import PL.Commented
@@ -511,21 +513,116 @@ instance Serialize CommentedExpr where
 
       grammar :: G.Grammar CommentedExpr
       grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
+instance Serialize Type where
+  serialize typ = serialize $ addTypeComments typ
+  deserialize bs = stripTypeComments <$> deserialize bs
+instance Serialize CommentedType where
+  serialize typ = case pprint (toPrinter grammar) typ of
+    Nothing
+      -> error "Failed to Serialize a type via a pretty-printer"
+
+    Just doc
+      -> encodeUtf8 . PLPrinter.render $ doc
+    where
+      grammar :: G.Grammar CommentedType
+      grammar = L.sub $ L.typ L.tyVar
+
+  -- TODO: It might be nice to be able to fail with a reason when serialization
+  -- is unsuccessful.
+  deserialize bs = case PLParser.runParser (toParser grammar) $ decodeUtf8 bs of
+    PLParser.ParseFailure _expected _cursor
+      -> Nothing
+    PLParser.ParseSuccess typ cursor
+      | noTrailingCharacters $ PLParser.remainder cursor
+      -> Just typ
+
+      | otherwise
+      -> Nothing
+    where
+      noTrailingCharacters :: Text -> Bool
+      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
+
+      grammar :: G.Grammar CommentedType
+      grammar = L.sub $ L.typ L.tyVar
+instance Serialize Kind where
+  serialize kind = case pprint (toPrinter L.kind) kind of
+    Nothing
+      -> error "Failed to Serialize a kind via a pretty-printer"
+
+    Just doc
+      -> encodeUtf8 . PLPrinter.render $ doc
+
+  -- TODO: It might be nice to be able to fail with a reason when serialization
+  -- is unsuccessful.
+  deserialize bs = case PLParser.runParser (toParser L.kind) $ decodeUtf8 bs of
+    PLParser.ParseFailure _expected _cursor
+      -> Nothing
+    PLParser.ParseSuccess kind cursor
+      | noTrailingCharacters $ PLParser.remainder cursor
+      -> Just kind
+
+      | otherwise
+      -> Nothing
+    where
+      noTrailingCharacters :: Text -> Bool
+      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
+
+-- Backing storage is a memory cache over the filesystem. We use this to back
+-- a HashStore for expressions, allowing them to be persisted across
+-- invocations of the REPL.
+--
+-- We use an orphan instance to serialize Exprs meaning the filestore cannot
+-- easily be shared. We guard against this by nesting under a '/lispy'
+-- subdirectory.
+--
+-- Ideally a canonical serialization format would exist.
+codeStore :: CodeStore
+codeStore = newCodeStore exprStore typeStore kindStore exprTypeStore typeKindStore
+  where
+    exprStore = newNestedStore newEmptyMemoryStore exprFileStore
+    typeStore = newNestedStore newEmptyMemoryStore typeFileStore
+    kindStore = newNestedStore newEmptyMemoryStore kindFileStore
+
+    exprTypeStore = newNestedStore newEmptyMemoryStore exprTypeFileStore
+    typeKindStore = newNestedStore newEmptyMemoryStore typeKindFileStore
+
+    exprFileStore :: FileStore Hash Expr
+    exprFileStore = newFileStore
+      (\exprHash -> keyFilePath ".pl/lispy/expr" (Just 32) exprHash <> "/reduced")
+      serialize
+      deserialize
+      (==)
+
+    typeFileStore :: FileStore Hash Type
+    typeFileStore = newFileStore
+      (\typeHash -> keyFilePath ".pl/lispy/type" (Just 32) typeHash <> "/reduced")
+      serialize
+      deserialize
+      (==)
+
+    kindFileStore :: FileStore Hash Kind
+    kindFileStore = newFileStore
+      (\kindHash -> keyFilePath ".pl/lispy/kind" (Just 32) kindHash <> "/reduced")
+      serialize
+      deserialize
+      (==)
+
+    exprTypeFileStore :: FileStore Hash Hash
+    exprTypeFileStore = newFileStore
+      (\exprHash -> keyFilePath ".pl/lispy/expr" (Just 32) exprHash <> "/type")
+      serialize
+      deserialize
+      (==)
+
+    typeKindFileStore :: FileStore Hash Hash
+    typeKindFileStore = newFileStore
+      (\typeHash -> keyFilePath ".pl/lispy/type" (Just 32) typeHash <> "/kind")
+      serialize
+      deserialize
+      (==)
 
 run :: IO ()
 run = do
-  -- Backing storage is a memory cache over the filesystem. We use this to back
-  -- a HashStore for expressions, allowing them to be persisted across
-  -- invocations of the REPL.
-  --
-  -- We use an orphan instance to serialize Exprs meaning the filestore cannot
-  -- easily be shared. We guard against this by nesting under a '/lispy'
-  -- subdirectory.
-  --
-  -- Ideally a canonical serialization format would exist.
-  let storage = newNestedStore newEmptyMemoryStore . newFileStore ".pl/lispy/expr" $ Just 32
-      exprStore = newHashStore storage
-
   -- Buffer events
   -- Hitting the buffer causes a STM lock up.
   -- TODO:
@@ -535,7 +632,7 @@ run = do
   --   - Pasting small lines. Ideally paste events would be handled as one event
   --     rather than as an event to insert each individual character.
   evChan <- newBChan 1024
-  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) (initialState (Just EditorCursor) usage exprStore)
+  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) (initialState (Just EditorCursor) usage codeStore)
 
 usage :: [Text]
 usage =

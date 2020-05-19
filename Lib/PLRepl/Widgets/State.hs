@@ -48,6 +48,7 @@ import PL.Store
 import PL.Hash
 import PL.HashStore
 import PL.TypeCtx
+import PL.CodeStore
 import PL.Var
 import PL.TypeCheck
 import PL.Test.Shared
@@ -120,9 +121,9 @@ data State n = State
 initialState
   :: Maybe n
   -> [Text]
-  -> HashStore CommentedExpr
+  -> CodeStore
   -> State n
-initialState initialFocus usage backingStorage = State
+initialState initialFocus usage codeStore = State
   { _replState    = initialReplState
   , _replConfigs  = initialReplConfigs
   , _editorState  = emptyEditorState
@@ -136,11 +137,11 @@ initialState initialFocus usage backingStorage = State
     -- few example types.
     initialReplState :: SomeReplState
     initialReplState =
-      let ReplState _ typeCheckCtx _exprStore = (emptyReplState :: ReplState ())
+      let ReplState _ typeCheckCtx _codeStore = (emptyReplState :: ReplState ())
        in SomeReplState $ ReplState
             { _replConfig   = exprConfig
             , _typeCheckCtx = typeCheckCtx{_typeCtx = sharedTypeCtx}
-            , _exprStore    = backingStorage
+            , _codeStore    = codeStore
             }
 
     initialTypeCtxState = typeCtxStateGivenReplState initialReplState

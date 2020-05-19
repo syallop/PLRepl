@@ -29,6 +29,7 @@ import PL.Type hiding (Type)
 import PL.TypeCtx
 import PL.Var
 import PL.TypeCheck
+import PL.CodeStore
 import PL.Store
 import PL.Store.Nested
 import PL.Store.File
@@ -111,23 +112,8 @@ main = do
     initialAction :: Event Name
     initialAction = PLEvent . EditorEv . InsertText . Test._parsesFrom . snd . (!! 0) . Map.toList $ exampleLispyTestCases
 
-    -- Backing storage is a memory cache over LocalStorage. We use this to back
-    -- a HashStore for expressions, allowing them to be persisted across
-    -- invocations of the REPL.
-    --
-    -- We use an orphan instance to serialize Exprs meaning the LocalStorage cannot
-    -- easily be shared. We guard against this by nesting under a '/lispy'
-    -- namespace.
-    --
-    -- Ideally a canonical serialization format would exist.
-    storage :: NestedStore MemoryStore LocalStorageStore Hash CommentedExpr
-    storage = newNestedStore newEmptyMemoryStore . newLocalStorageStore $ "lispy/expr"
-
-    exprStore :: HashStore CommentedExpr
-    exprStore = newHashStore storage
-
     model :: State Name
-    model = State $ PL.initialState (Just EditorCursor) usage exprStore
+    model = State $ PL.initialState (Just EditorCursor) usage codeStore
 
     update :: Event Name -> State Name -> Effect (Event Name) (State Name)
     update = handleEvent
@@ -146,6 +132,60 @@ main = do
     -- Root element for DOM diff
     mountPoint :: Maybe MisoString
     mountPoint = Just "repl"
+
+-- Backing storage is a memory cache over LocalStorage. We use this to back
+-- a HashStore for expressions, allowing them to be persisted across
+-- invocations of the REPL.
+--
+-- We use an orphan instance to serialize Exprs meaning the LocalStorage cannot
+-- easily be shared. We guard against this by nesting under a '/lispy'
+-- namespace.
+--
+-- Ideally a canonical serialization format would exist.
+codeStore :: CodeStore
+codeStore = newCodeStore exprStore typeStore kindStore exprTypeStore typeKindStore
+  where
+    exprStore = newNestedStore newEmptyMemoryStore exprLocalStorageStore
+    typeStore = newNestedStore newEmptyMemoryStore typeLocalStorageStore
+    kindStore = newNestedStore newEmptyMemoryStore kindLocalStorageStore
+
+    exprTypeStore = newNestedStore newEmptyMemoryStore exprTypeLocalStorageStore
+    typeKindStore = newNestedStore newEmptyMemoryStore typeKindLocalStorageStore
+
+    exprLocalStorageStore :: LocalStorageStore Hash Expr
+    exprLocalStorageStore = newLocalStorageStore
+      (\exprHash -> qualifiedKeyName ".pl/lispy/expr" exprHash <> "/reduced")
+      serializeJSString
+      deserializeJSString
+      (==)
+
+    typeLocalStorageStore :: LocalStorageStore Hash Type
+    typeLocalStorageStore = newLocalStorageStore
+      (\typeHash -> qualifiedKeyName ".pl/lispy/type" typeHash <> "/reduced")
+      serializeJSString
+      deserializeJSString
+      (==)
+
+    kindLocalStorageStore :: LocalStorageStore Hash Kind
+    kindLocalStorageStore = newLocalStorageStore
+      (\kindHash -> qualifiedKeyName ".pl/lispy/kind"  kindHash <> "/reduced")
+      serializeJSString
+      deserializeJSString
+      (==)
+
+    exprTypeLocalStorageStore :: LocalStorageStore Hash Hash
+    exprTypeLocalStorageStore = newLocalStorageStore
+      (\exprHash -> qualifiedKeyName ".pl/lispy/expr" exprHash <> "/type")
+      serializeJSString
+      deserializeJSString
+      (==)
+
+    typeKindLocalStorageStore :: LocalStorageStore Hash Hash
+    typeKindLocalStorageStore = newLocalStorageStore
+      (\typeHash -> qualifiedKeyName ".pl/lispy/type"  typeHash <> "/kind")
+      serializeJSString
+      deserializeJSString
+      (==)
 
 -- Hijack the Lispy Parser/ Printer to define a missing serialize instance for
 -- expressions to allow us to store and retrieve them from the filesystem.
@@ -185,6 +225,59 @@ instance Serialize CommentedExpr where
 
       grammar :: G.Grammar CommentedExpr
       grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
+instance Serialize Type where
+  serialize typ = serialize $ addTypeComments typ
+  deserialize bs = stripTypeComments <$> deserialize bs
+instance Serialize CommentedType where
+  serialize typ = case pprint (toPrinter grammar) typ of
+    Nothing
+      -> error "Failed to Serialize a type via a pretty-printer"
+
+    Just doc
+      -> encodeUtf8 . PLPrinter.render $ doc
+    where
+      grammar :: G.Grammar CommentedType
+      grammar = L.sub $ L.typ L.tyVar
+
+  -- TODO: It might be nice to be able to fail with a reason when serialization
+  -- is unsuccessful.
+  deserialize bs = case PLParser.runParser (toParser grammar) $ decodeUtf8 bs of
+    PLParser.ParseFailure _expected _cursor
+      -> Nothing
+    PLParser.ParseSuccess typ cursor
+      | noTrailingCharacters $ PLParser.remainder cursor
+      -> Just typ
+
+      | otherwise
+      -> Nothing
+    where
+      noTrailingCharacters :: Text -> Bool
+      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
+
+      grammar :: G.Grammar CommentedType
+      grammar = L.sub $ L.typ L.tyVar
+instance Serialize Kind where
+  serialize kind = case pprint (toPrinter L.kind) kind of
+    Nothing
+      -> error "Failed to Serialize a kind via a pretty-printer"
+
+    Just doc
+      -> encodeUtf8 . PLPrinter.render $ doc
+
+  -- TODO: It might be nice to be able to fail with a reason when serialization
+  -- is unsuccessful.
+  deserialize bs = case PLParser.runParser (toParser L.kind) $ decodeUtf8 bs of
+    PLParser.ParseFailure _expected _cursor
+      -> Nothing
+    PLParser.ParseSuccess kind cursor
+      | noTrailingCharacters $ PLParser.remainder cursor
+      -> Just kind
+
+      | otherwise
+      -> Nothing
+    where
+      noTrailingCharacters :: Text -> Bool
+      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
 
 -- | Transform the state in response to an event with optional side effects.
 handleEvent :: Event Name -> State Name -> Effect (Event Name) (State Name)

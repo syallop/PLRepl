@@ -100,7 +100,8 @@ lispyTypeReplConfig grammarParser tb = ReplConfig
   , _read        = grammarParser
   , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
                                       -- expressions. We currently dont support defining new types.
-  , _print       = \_inputTxt parsedTy Nothing -> pure . mconcat $
+
+  , _print       = \(PrintArguments _ (Just parsedTy) _ _ _ _ _) -> pure . mconcat $
                      [ text "parsed type:"
                      , lineBreak
                      , fromMaybe mempty $ pprint (toPrinter $ sub $ typ tb) parsedTy
@@ -117,7 +118,7 @@ readOnlyConfig grammar grammarParser = ReplConfig
   , _read        = grammarParser
   , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
                                       -- expressions. We currently dont support defining new types.
-  , _print       = \inputTxt parsedTy Nothing -> pure mempty
+  , _print       = \(PrintArguments _ _ Nothing Nothing Nothing Nothing Nothing) -> pure mempty
   }
 
 -- Convert a Grammar to a parser using PLParser.
@@ -429,39 +430,85 @@ megaparsecGrammarParser grammar =
 printerF
   :: (TypeFor CommentedPhase -> Doc)
   -> Print (ExprFor CommentedPhase)
-printerF ppType = \inputTxt parsed mEval -> do
+printerF ppType = \printArgs -> do
   grammar <- replGrammar
   let ppExpr = fromMaybe mempty . pprint (toPrinter grammar)
 
   pure . mconcat $
     [ text "read text:"
     , lineBreak
-    , rawText inputTxt
-    , lineBreak, lineBreak
-
-    , text "parsed input:"
-    , lineBreak
-    , indent 1 $ ppExpr parsed
+    , rawText . _readText $ printArgs
     , lineBreak, lineBreak
     ]
     ++
-    case mEval of
+    case _parsed printArgs of
+      Nothing
+        -> [ text "But failed to parse an expression"
+           , lineBreak
+           ]
+
+      Just parsed
+        -> [ text "parsed input:"
+           , lineBreak
+           , indent 1 . ppExpr $ parsed
+           , lineBreak, lineBreak
+           ]
+    ++
+    case _evaluatedExpr printArgs of
       Nothing
         -> []
 
-      Just (redExpr, ty)
+      Just reducedExpr
         -> [ text "which reduces to: "
            , lineBreak
-           , indent 1 . ppExpr $ redExpr
-           , lineBreak, lineBreak
-           , indent 1 . text . showBase58 . hash $ redExpr
-           , lineBreak, lineBreak
-
-           , text "with type:"
-           , lineBreak
-           , indent 1 $ ppType ty
-           , lineBreak, lineBreak
-           , indent 1 . text . showBase58 . hash $ ty
+           , indent 1 . ppExpr $ reducedExpr
            , lineBreak, lineBreak
            ]
+    ++
+    case _evaluatedType printArgs of
+      Nothing
+        -> []
+
+      Just reducedType
+        -> [ text "with type:"
+           , lineBreak
+           , indent 1 $ ppType reducedType
+           , lineBreak, lineBreak
+           ]
+
+    ++
+    case _storedExpr printArgs of
+      Nothing
+        -> [ text "Failed to store expression"
+           , lineBreak
+           ]
+
+      Just (_res, exprHash)
+        -> [ text "stored with hash:"
+           , lineBreak
+           , indent 1 . text . showBase58 $ exprHash
+           , lineBreak, lineBreak
+           ]
+
+    ++
+    case _storedType printArgs of
+      Nothing
+        -> [ text "Failed to store type"
+           , lineBreak
+           ]
+
+      Just (_res, typeHash)
+        -> [ text "stored with type hash:"
+           , lineBreak
+           , indent 1 . text . showBase58 $ typeHash
+           , lineBreak, lineBreak
+           ]
+    ++
+    case _storedExprHasType printArgs of
+      Nothing
+        -> [ text "Failed to store type association"
+           ]
+
+      Just _
+        -> []
 

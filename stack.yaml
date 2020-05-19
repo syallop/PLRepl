@@ -8,11 +8,11 @@ packages:
 - ./Lib
 extra-deps:
 - git: https://github.com/syallop/PLCore
-  commit: d7c2f36e0a5fbae792faef0144d435105fc00408
+  commit: bed97f5b7f8064c93fafa8289dc2a7c872470e94
 - git: https://github.com/syallop/PLEditor
   commit: eca85a4b7a0df4400e795e32a89ecbaa756c6567
 - git: https://github.com/syallop/PLLispy
-  commit: e3d7c88e8432af95b00f222d61799d81d44e3f03
+  commit: 30486246c17eb2a5fa67a3a4e270c2a3cb83c891
 - git: https://github.com/syallop/PLParser
   commit: 8da016b4bcd88055fec656de0fbfa52f2087562b
 - git: https://github.com/syallop/PLGrammar
