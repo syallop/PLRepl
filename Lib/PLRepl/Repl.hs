@@ -313,7 +313,7 @@ replReduce
   -> Repl o Expr
 replReduce initialExpr = do
   underTypeCtx <- replTypeCtx
-  case reduce underTypeCtx initialExpr of
+  case reduce (topReductionCtx underTypeCtx) initialExpr of
     Left err   -> replError err
     Right expr -> pure expr
 
