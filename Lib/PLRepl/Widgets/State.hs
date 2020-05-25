@@ -20,7 +20,7 @@ module PLRepl.Widgets.State
   , typeCtxText
   , emptyTypeCtxState
   , newTypeCtxState
-  , typeCtxStateGivenReplState
+  , typeCtxStateGivenReplTypeCtx
   , ppTypeCtx
   , ppError
 
@@ -77,21 +77,12 @@ import Data.List
 
 import Data.Monoid
 
--- | A Name given to a Grammar.
--- TODO:
--- - Maybe Grammars themselves should be named/ names should be moved to
---   PLGrammar.
-type GrammarName = Text
-
 -- | The state of the entire repl and sub-widgets.
 data State n = State
-  { -- The state of the Repl includes types, expressions and bindings etc.
-    -- Currently configured with a Grammar on Expr Var Type TyVar
-    _replState    :: SomeReplState
-
-    -- A Map of grammar names to repl configs with the intent we can swap out
-    -- grammars at runtime in order to parse, eval and print things differently.
-  , _replConfigs  :: Map GrammarName SomeReplConfig
+  {
+    -- The current repl can be 'stepped' with textual input in order to read,
+    -- evaluate and print some output as defined by its configuration.
+    _currentRepl  :: SimpleRepl
 
    -- The editorState corresponds to an input widget into which expressions are
    -- entered.
@@ -124,8 +115,7 @@ initialState
   -> CodeStore
   -> State n
 initialState initialFocus usage codeStore = State
-  { _replState    = initialReplState
-  , _replConfigs  = initialReplConfigs
+  { _currentRepl  = currentRepl
   , _editorState  = emptyEditorState
   , _outputState  = emptyOutputState
   , _typeCtxState = initialTypeCtxState
@@ -133,47 +123,18 @@ initialState initialFocus usage codeStore = State
   , _focusOn      = initialFocus
   }
   where
-    -- Take the emptyReplState, then add an initial non-empty replconfig and a
-    -- few example types.
-    initialReplState :: SomeReplState
-    initialReplState =
-      let ReplState _ typeCheckCtx _codeStore = (emptyReplState :: ReplState ())
-       in SomeReplState $ ReplState
-            { _replConfig   = exprConfig
-            , _typeCheckCtx = typeCheckCtx{_typeCtx = sharedTypeCtx}
-            , _codeStore    = codeStore
-            }
+    currentRepl :: SimpleRepl
+    currentRepl = lispyExprRepl codeStore
 
-    initialTypeCtxState = typeCtxStateGivenReplState initialReplState
+    initialTypeCtxState = typeCtxStateGivenReplTypeCtx . _replTypeCtx . simpleReplCtx $ currentRepl
 
-    exprGrammar :: G.Grammar CommentedExpr
-    exprGrammar = top $ expr var (sub $ typ tyVar) tyVar
-
-    exprConfig :: ReplConfig CommentedExpr
-    exprConfig = lispyExprReplConfig (plGrammarParser exprGrammar) var (sub $ typ tyVar) tyVar
-
-    typePrinter :: CommentedType -> Doc
-    typePrinter = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar)
-
-    typeGrammar :: G.Grammar CommentedType
-    typeGrammar = top $ typ tyVar
-
-    typeConfig :: ReplConfig CommentedType
-    typeConfig = lispyTypeReplConfig (plGrammarParser typeGrammar) tyVar
-
-      where
-    initialReplConfigs :: Map GrammarName SomeReplConfig
-    initialReplConfigs = Map.fromList
-      [ ("lispyExpr", SomeReplConfig exprConfig)
-      , ("lispyType", SomeReplConfig typeConfig)
-      ]
-
--- | What is the typeCtxState output given the current ReplState.
-typeCtxStateGivenReplState
-  :: SomeReplState
+-- | What is the typeCtxState output given the source of truth TypeCtx in the
+-- Repl.
+typeCtxStateGivenReplTypeCtx
+  :: TypeCtx
   -> TypeCtxState
-typeCtxStateGivenReplState (SomeReplState replState)
-  = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) . _typeCtx . _typeCheckCtx $ replState
+typeCtxStateGivenReplTypeCtx typeCtx
+  = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) $ typeCtx
   where
     ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
 
@@ -183,3 +144,4 @@ instance Document a => Document [a] where
 
 instance Document a => Document (NE.NonEmpty a) where
   document as = document . NE.toList $ as
+

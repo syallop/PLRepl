@@ -19,113 +19,259 @@ A PLRepl.Repl for lispy-style grammars.
 
 |-}
 module PLRepl.Repl.Lispy
-  ( lispyExprReplConfig
-  , lispyTypeReplConfig
-  , readOnlyConfig
+  ( lispyExprRepl
   , plGrammarParser
   , megaparsecGrammarParser
   )
   where
 
 import PL.Binds
+import PL.Commented
+import PL.Pattern
+import PL.TypeCtx
 import PL.Error
 import PL.Expr
-import PL.Kind
 import PL.Hash
+import PL.Kind
 import PL.TyVar
-import PL.Commented
 import PL.Type
 import PL.Var
+import PL.Test.Shared
 import PLGrammar
 import PLLispy
 import PLLispy.Level
-import PLPrinter
-import PLRepl.Repl
-import qualified PLParser as PLParser
 import PLParser
 import PLParser.Cursor
+import PL.Store
+import PLPrinter
+import PL.CodeStore
+import PLRepl.Repl
+import qualified PLParser as PLParser
 
-import Data.Text (Text)
 import Data.Maybe
 import Data.Monoid
-import qualified Data.Text as Text
+import Data.Set (Set)
+import Data.Text (Text)
+import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Data.List as List
-import Data.Set (Set)
+import qualified Data.Text as Text
 
 import Control.Applicative
 import Data.Void
 import Reversible
 import Reversible.Iso
+import qualified Control.Monad.Combinators.Expr as Mega
 import qualified PLGrammar as G
 import qualified Text.Megaparsec as Mega
 import qualified Text.Megaparsec.Char as Mega
-import qualified Control.Monad.Combinators.Expr as Mega
 
--- | A ReplConfig for entire lispy expressions parameterised over individual
--- Grammars for bindings, abstractions and type bindings and accepting a custom Read
--- function to transform Grammars into parsers.
---
--- 'plGrammarParser' and 'megaparsecGrammarParser' are exported and can be used
--- here.
-lispyExprReplConfig
-  :: (Text -> Repl (ExprFor CommentedPhase) (ExprFor CommentedPhase))
-  -> Grammar Var
-  -> Grammar (TypeFor CommentedPhase)
-  -> Grammar TyVar
-  -> ReplConfig (ExprFor CommentedPhase)
-lispyExprReplConfig grammarParser b abs tb =
-  let ?eb  = b
-      ?abs = abs
-      ?tb  = tb
-   in ReplConfig
-        { _someGrammar = top $ expr b abs tb
-        , _read        = grammarParser
-        , _eval        = replEvalSimple
-        , _print       = printerF (fromMaybe mempty . pprint (toPrinter $ top $ typ tb))
-        }
+-- | A Repl which:
+-- - Parses
+-- - Resolves types of referenced ContentBindings from the CodeStore
+-- - Type-checks
+-- - Kind-checks
+-- - Reduces expressions
+-- - Stores expressions, types and kinds in the provided CodeStore
+-- - Evaluates the final expression
+lispyExprRepl
+  :: CodeStore
+  -> SimpleRepl
+lispyExprRepl codeStore =
+  let typeCtx   = sharedTypeCtx
 
--- | A ReplConfig for type signatures parameterised over a Grammar for type
--- bindings and accepting a custom Read function to transform Grammars into parsers.
---
--- 'plGrammarParser' and 'megaparsecGrammarParser' are exported and can be used
--- here.
-lispyTypeReplConfig
-  :: (Text -> Repl (TypeFor CommentedPhase) (TypeFor CommentedPhase))
-  -> Grammar (TypeBindingFor CommentedPhase)
-  -> ReplConfig (TypeFor CommentedPhase)
-lispyTypeReplConfig grammarParser tb = ReplConfig
-  { _someGrammar = sub $ typ tb
-  , _read        = grammarParser
-  , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
-                                      -- expressions. We currently dont support defining new types.
+      read :: Text -> Repl CommentedExpr
+      read txt = do
+        -- TODO: Debug level
+        {-
+        replLog $ mconcat
+          [ text "Read text:"
+          , lineBreak
+          , rawText txt
+          , lineBreak
+          ]
+        -}
 
-  , _print       = \(PrintArguments _ (Just parsedTy) _ _ _ _ _) -> pure . mconcat $
-                     [ text "parsed type:"
-                     , lineBreak
-                     , fromMaybe mempty $ pprint (toPrinter $ sub $ typ tb) parsedTy
-                     ]
-  }
+        readExpr <- plGrammarParser exprGrammar txt
+        replLog $ mconcat
+          [ text "Parsed expression (with comments hidden):"
+          , lineBreak
+          , indent1 . ppExpr . addComments . stripComments $ readExpr
+          , lineBreak
+          ]
+        pure readExpr
 
--- | Read a Grammar with some Parser, report errors but otherwise do nothing.
-readOnlyConfig
-  :: Grammar o
-  -> (Text -> Repl o o)
-  -> ReplConfig o
-readOnlyConfig grammar grammarParser = ReplConfig
-  { _someGrammar = grammar
-  , _read        = grammarParser
-  , _eval        = \_ -> pure Nothing -- Parsing Types doesnt define new
-                                      -- expressions. We currently dont support defining new types.
-  , _print       = \(PrintArguments _ _ Nothing Nothing Nothing Nothing Nothing) -> pure mempty
-  }
+      eval :: CommentedExpr -> Repl Expr
+      eval = \commentedExpr -> do
+        -- Remove things for humans
+        let expr = stripComments commentedExpr
+
+        -- Type check
+        contentBindingTypes <- replResolveExprTypes expr
+        replLog . mconcat $ if Map.null contentBindingTypes
+          then mempty
+          else [ lineBreak
+               , text "All named expressions referenced at the top-level have a known type."
+               , lineBreak
+               ]
+
+        checkedType <- replTypeCheck contentBindingTypes expr
+        replLog . mconcat $
+          [ lineBreak
+          , text "Expression is well typed with type:"
+          , lineBreak
+          , indent1 . ppType . addTypeComments $ checkedType
+          , lineBreak
+          ]
+
+        checkedKind <- replKindCheck checkedType emptyCtx
+        replLog . mconcat $
+          [ lineBreak
+          , text "Whose type has kind:"
+          , lineBreak
+          , indent1 $ ppKind checkedKind
+          , lineBreak
+          ]
+
+        -- Reduce
+        reducedExpr <- replReduceExpr expr
+        replLog $ if expr == reducedExpr
+          then mconcat
+            [ lineBreak
+            , text "Expression does not reduce any further."
+            , lineBreak
+            ]
+
+          else mconcat
+            [ lineBreak
+            , text "Expression reduces to:"
+            , lineBreak
+            , indent1 . ppExpr . addComments $ reducedExpr
+            , lineBreak
+            ]
+
+        -- Store reduced expression
+        storeResult <- replStore reducedExpr checkedType checkedKind
+        replLog . mconcat $
+          [ lineBreak
+          , text "Successfully stored (against their hashes):"
+          , lineBreak
+
+          , indent1 . mconcat $
+              [ text "Expression:"
+              , lineBreak
+              , indent1 . mconcat $
+                  [ text . showBase58 . _exprHash $ storeResult
+                  , case _exprResult storeResult of
+                      Successfully
+                        -> mempty
+                      AlreadyStored
+                        -> lineBreak <> text "(was already stored)"
+                      -- TODO: Indicate what values were replaced
+                      Overwritten _oldValues
+                        -> lineBreak <> text "Replaced equivalent existing values"
+                  ]
+              , lineBreak
+              ]
+
+          , lineBreak
+          , indent1 . mconcat $
+              [ text "Type:"
+              , lineBreak
+              , indent1 . mconcat $
+                  [ text . showBase58 . _typeHash $ storeResult
+                  , case _typeResult storeResult of
+                      Successfully
+                        -> mempty
+                      AlreadyStored
+                        -> lineBreak <> text "(was already stored)"
+                      -- TODO: Indicate what values were replaced
+                      Overwritten _oldValues
+                        -> lineBreak <> text "Replaced equivalent existing values"
+                  ]
+              , lineBreak
+              ]
+
+          , lineBreak
+          , indent1 . mconcat $
+              [ text "Kind:"
+              , lineBreak
+              , indent1 . mconcat $
+                  [ text . showBase58 . _kindHash $ storeResult
+                  , case _kindResult storeResult of
+                      Successfully
+                        -> mempty
+                      AlreadyStored
+                        -> lineBreak <> text "(was already stored)"
+                      -- TODO: Indicate what values were replaced
+                      Overwritten _oldValues
+                        -> lineBreak <> text "Replaced equivalent existing values"
+                  ]
+              , lineBreak
+              ]
+              -- TODO: Report on type/kind associations
+          ]
+
+        -- Evaluate
+        replLog . mconcat $
+          [ lineBreak
+          , text "Evaluating expression (non-termination is a bug!):"
+          ]
+        (_,evaluatedExpr) <- replEvaluateExpr reducedExpr (Just 1024)
+        replLog . indent1 . mconcat $ if evaluatedExpr == reducedExpr
+          then [ lineBreak
+               , text "Expression does not evaluate any further."
+               , lineBreak
+               ]
+          else [ lineBreak
+               , text "Expression evaluates to:"
+               , indent1 . ppExpr . addComments $ evaluatedExpr
+               , lineBreak
+               ]
+
+        pure evaluatedExpr
+
+
+      ctx = mkReplCtx typeCtx codeStore
+   in mkSimpleRepl read eval ppResult ctx
+
+   where
+     exprGrammar :: G.Grammar CommentedExpr
+     exprGrammar = top $ expr var (sub $ typ tyVar) tyVar
+
+     ppKind    = fromMaybe mempty . pprint (toPrinter kind)
+     ppType    = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar)
+     ppPattern = fromMaybe mempty . pprint (toPrinter $ top $ pattern var tyVar) . addPatternComments
+     ppExpr    = fromMaybe mempty . pprint (toPrinter $ top $ expr var (sub $ typ tyVar) tyVar)
+     ppVar     = fromMaybe mempty . pprint (toPrinter var)
+     ppTyVar   = fromMaybe mempty . pprint (toPrinter tyVar)
+
+     ppResult :: Either (Error Expr Type Pattern TypeCtx) (CommentedExpr,Expr)
+              -> Doc
+     ppResult e = case e of
+       Left err
+         -> ppError ppPattern
+                    (ppType . addTypeComments)
+                    (ppExpr . addComments)
+                    (ppTypeCtx document (ppTypeInfo (ppType . addTypeComments)))
+                    ppVar
+                    ppTyVar
+                    $ err
+
+       Right (_readExpr,_evaluatedExpr)
+         -> mconcat
+              [ lineBreak
+              , text "Finished successfully"
+              , lineBreak
+              , text "You may now reference this expression by it's hash"
+              , lineBreak
+              ]
 
 -- Convert a Grammar to a parser using PLParser.
 plGrammarParser
-  :: Grammar o
+  :: Grammar read
   -> Text
-  -> Repl o o
+  -> Repl read
 plGrammarParser grammar =
   let plParser = toParser grammar
       plPrinter = fromMaybe mempty . pprint (toPrinter grammar)
@@ -356,12 +502,11 @@ ppParseResult ppA p = case p of
            , text . render . mconcat . flattenExpectedDoc $ e1
            ]
 
-
 -- Convert a Grammar to a parser using Megaparsec.
 megaparsecGrammarParser
-  :: Grammar o
+  :: Grammar read
   -> Text
-  -> Repl o o
+  -> Repl read
 megaparsecGrammarParser grammar =
   let megaparsecParser = toParser grammar
    in \txt -> case Mega.runParser megaparsecParser "" txt of
@@ -425,90 +570,4 @@ megaparsecGrammarParser grammar =
       -> Mega.Parsec Void Text b
       -> Mega.Parsec Void Text (a, b)
     rapParser pl pr = (,) <$> pl <*> pr
-
--- Transform a parsed expr, its reduction and type into some output to print
-printerF
-  :: (TypeFor CommentedPhase -> Doc)
-  -> Print (ExprFor CommentedPhase)
-printerF ppType = \printArgs -> do
-  grammar <- replGrammar
-  let ppExpr = fromMaybe mempty . pprint (toPrinter grammar)
-
-  pure . mconcat $
-    [ text "read text:"
-    , lineBreak
-    , rawText . _readText $ printArgs
-    , lineBreak, lineBreak
-    ]
-    ++
-    case _parsed printArgs of
-      Nothing
-        -> [ text "But failed to parse an expression"
-           , lineBreak
-           ]
-
-      Just parsed
-        -> [ text "parsed input:"
-           , lineBreak
-           , indent 1 . ppExpr $ parsed
-           , lineBreak, lineBreak
-           ]
-    ++
-    case _evaluatedExpr printArgs of
-      Nothing
-        -> []
-
-      Just reducedExpr
-        -> [ text "which reduces to: "
-           , lineBreak
-           , indent 1 . ppExpr $ reducedExpr
-           , lineBreak, lineBreak
-           ]
-    ++
-    case _evaluatedType printArgs of
-      Nothing
-        -> []
-
-      Just reducedType
-        -> [ text "with type:"
-           , lineBreak
-           , indent 1 $ ppType reducedType
-           , lineBreak, lineBreak
-           ]
-
-    ++
-    case _storedExpr printArgs of
-      Nothing
-        -> [ text "Failed to store expression"
-           , lineBreak
-           ]
-
-      Just (_res, exprHash)
-        -> [ text "stored with hash:"
-           , lineBreak
-           , indent 1 . text . showBase58 $ exprHash
-           , lineBreak, lineBreak
-           ]
-
-    ++
-    case _storedType printArgs of
-      Nothing
-        -> [ text "Failed to store type"
-           , lineBreak
-           ]
-
-      Just (_res, typeHash)
-        -> [ text "stored with type hash:"
-           , lineBreak
-           , indent 1 . text . showBase58 $ typeHash
-           , lineBreak, lineBreak
-           ]
-    ++
-    case _storedExprHasType printArgs of
-      Nothing
-        -> [ text "Failed to store type association"
-           ]
-
-      Just _
-        -> []
 

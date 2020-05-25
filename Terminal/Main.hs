@@ -149,32 +149,28 @@ handleEvent
   -> PL.State PL.Name
   -> BrickEvent PL.Name (PL.Event PL.Name)
   -> EventM PL.Name (Next (PL.State PL.Name))
-handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeCtxSt usageSt focus)) ev = case ev of
+handleEvent chan st ev = case ev of
   -- an event from our application
   AppEvent appEv -> case appEv of
-    -- Replctx must be updated
-    PL.ReplaceReplState someReplState'
-      -> continue (PL.State someReplState' replConfigs editorSt outputSt typeCtxSt usageSt focus)
+    -- Repl should be replaced
+    PL.ReplaceCurrentRepl replacementRepl
+      -> continue st{_currentRepl = replacementRepl}
 
     -- An event to the editor
     PL.EditorEv editorEv
-      -> let editorSt' = handleEditorEventDefault editorEv editorSt
-          in continue (PL.State someReplState replConfigs editorSt' outputSt typeCtxSt usageSt focus)
+      -> continue st{_editorState = handleEditorEventDefault editorEv $ _editorState st}
 
     PL.OutputEv outputEv
-      -> let outputSt' = handleOutputEventDefault outputEv outputSt
-          in continue (PL.State someReplState replConfigs editorSt outputSt' typeCtxSt usageSt focus)
+      -> continue st{_outputState = handleOutputEventDefault outputEv $ _outputState st}
 
     PL.TypeCtxEv typeCtxEv
-      -> let typeCtxSt' = handleTypeCtxEventDefault typeCtxEv typeCtxSt
-          in continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt' usageSt focus)
+      -> continue st{_typeCtxState = handleTypeCtxEventDefault typeCtxEv $ _typeCtxState st}
 
     PL.UsageEv usageEv
-      -> let usageSt' = handleUsageEventDefault usageEv usageSt
-          in continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt usageSt' focus)
+      -> continue st{_usageState = handleUsageEventDefault usageEv $ _usageState st}
 
     PL.FocusOn n
-      -> continue (PL.State someReplState replConfigs editorSt outputSt typeCtxSt usageSt n)
+      -> continue st{_focusOn = n}
 
   -- A virtual terminal event. Most events will be sent to whatever widget we
   -- consider focused. Some may be global.
@@ -186,36 +182,36 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
       -- +ctrl    => taller view
       Vty.KUp -> case modifiers of
         []
-          -> sendToFocused chan CursorUp focus >> continue st
+          -> sendToFocused chan CursorUp (_focusOn st) >> continue st
         [Vty.MCtrl]
-          -> sendToFocused chan (TallerView 1) focus >> continue st
+          -> sendToFocused chan (TallerView 1) (_focusOn st) >> continue st
         _ -> continue st
 
       -- down arrow => cursor down
       -- +ctrl      => shorter view
       Vty.KDown -> case modifiers of
         []
-          -> sendToFocused chan CursorDown focus >> continue st
+          -> sendToFocused chan CursorDown (_focusOn st) >> continue st
         [Vty.MCtrl]
-          -> sendToFocused chan (TallerView (-1)) focus >> continue st
+          -> sendToFocused chan (TallerView (-1)) (_focusOn st) >> continue st
         _ -> continue st
 
       -- left arrow => cursor left
       -- +ctrl      => narrower view
       Vty.KLeft -> case modifiers of
         []
-          -> sendToFocused chan CursorLeft focus >> continue st
+          -> sendToFocused chan CursorLeft (_focusOn st) >> continue st
         [Vty.MCtrl]
-          -> sendToFocused chan (WiderView (-1)) focus >> continue st
+          -> sendToFocused chan (WiderView (-1)) (_focusOn st) >> continue st
         _ -> continue st
 
       -- right arrow => cursor right
       -- +ctrl       => wider view
       Vty.KRight -> case modifiers of
         []
-          -> sendToFocused chan CursorRight focus >> continue st
+          -> sendToFocused chan CursorRight (_focusOn st) >> continue st
         [Vty.MCtrl]
-          -> sendToFocused chan (WiderView 1) focus >> continue st
+          -> sendToFocused chan (WiderView 1) (_focusOn st) >> continue st
         _ -> continue st
 
       -- any character => insert that character in the editor.
@@ -263,15 +259,12 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
       --   - on success => render the parse in the output widget and switch
       --     focus to the editor.
       Vty.KIns
-        -> do let txt             = editorText editorSt
+        -> do let txt             = editorText $ _editorState $ st
               let ?eb             = var
                   ?abs            = typ tyVar
                   ?tb             = tyVar
-              (someReplState',eRes) <- liftIO $ case someReplState of
-                                         SomeReplState replState
-                                           -> do let step = PL.replStep txt
-                                                 (nextState, result) <- _unRepl step replState
-                                                 pure (SomeReplState nextState, result)
+              let ppExpr          = fromMaybe mempty . pprint (toPrinter $ top $ expr var (sub $ typ tyVar) tyVar) . addComments
+              (log,eRes) <- liftIO . (`step` txt) . _currentRepl $ st
               case eRes of
                 -- Some repl error
                 Left err
@@ -281,37 +274,39 @@ handleEvent chan (st@(PL.State someReplState replConfigs editorSt outputSt typeC
                   --   re-detecting the newlines.
                   -- - The printer should be passed the current width so it
                   --   wraps optimally.
-                  -> let ppType    = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
+                  -> let ppType    = fromMaybe mempty . pprint (toPrinter $ sub $ typ tyVar) . addTypeComments
                          ppPattern = fromMaybe mempty . pprint (toPrinter $ top $ pattern var tyVar) . addPatternComments
                          ppExpr    = fromMaybe mempty . pprint (toPrinter $ top $ expr var (top $ typ tyVar) tyVar) . addComments
                          ppVar     = fromMaybe mempty . pprint (toPrinter var)
                          ppTyVar   = fromMaybe mempty . pprint (toPrinter tyVar)
-                      in continue (PL.State someReplState
-                                        replConfigs
-                                        editorSt
-                                        (newOutputState $ Text.lines $ (PLPrinter.render . ppError ppPattern ppType ppExpr (ppTypeCtx document (ppTypeInfo ppType)) ppVar ppTyVar $ err))
-                                        (typeCtxStateGivenReplState someReplState) -- someReplState' ?
-                                        usageSt
-                                        (Just OutputCursor))
+                      in continue st{ _outputState  = newOutputState . Text.lines
+                                                                     . PLPrinter.render
+                                                                     . mconcat $
+                                                                         [ lineBreak
+                                                                         , log
+                                                                         , lineBreak
+                                                                         , ppError ppPattern ppType ppExpr (ppTypeCtx document (ppTypeInfo ppType)) ppVar ppTyVar $ err
+                                                                         ]
+                                    , _focusOn      = Just OutputCursor
+                                    }
 
                 -- A successful parse
-                Right a
-                  -> do liftIO (writeBChan chan . ReplaceReplState $ someReplState')
-                        continue (PL.State someReplState'
-                                           replConfigs
-                                           emptyEditorState
-                                           (newOutputState $ Text.lines $ renderDocument a)
-                                           (typeCtxStateGivenReplState someReplState')
-                                           usageSt
-                                           (Just EditorCursor))
+                Right replacementRepl
+                  -> do liftIO (writeBChan chan . ReplaceCurrentRepl $ replacementRepl)
+                        continue st{ _currentRepl  = replacementRepl
+                                   , _editorState  = emptyEditorState
+                                   , _outputState  = newOutputState . Text.lines . renderDocument $ log
+                                   , _typeCtxState = typeCtxStateGivenReplTypeCtx . _replTypeCtx . simpleReplCtx $ replacementRepl
+                                   , _focusOn      = Just EditorCursor
+                                   }
 
       -- page-up => switch focus to the next widget.
       Vty.KPageUp
-        -> liftIO (writeBChan chan $ FocusOn $ fmap nextFocus $ focus) >> continue st
+        -> liftIO (writeBChan chan . FocusOn . fmap nextFocus . _focusOn $ st) >> continue st
 
       -- page-down => switch focus to the previous widget.
       Vty.KPageDown
-        -> liftIO (writeBChan chan . FocusOn . fmap previousFocus $ focus) >> continue st
+        -> liftIO (writeBChan chan . FocusOn . fmap previousFocus . _focusOn $ st) >> continue st
 
       -- escape => exit the program.
       Vty.KEsc

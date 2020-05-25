@@ -1,459 +1,735 @@
-{-# LANGUAGE
-    RankNTypes
-  , FlexibleContexts
-  , GADTs
-  , OverloadedStrings
-  , UndecidableInstances
-  #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-|
 Module      : PLRepl.Repl
 Copyright   : (c) Samuel A. Yallop, 2018
 Maintainer  : syallop@gmail.com
 Stability   : experimental
 
-PLRepl.Repl abstracts the Read Eval Print Loop for some PL repl.
-It accepts a repl configuration which it understands how to drive.
+Thid module can be used to implement a Read Eval Print Loop for some PL repl
 
-Repl configuration(s) are found under PLRepl.Repl.* This abstraction allows
-defining multiple repls which can be switched between, for example we might
-want a repl for different expression grammars or a repl exclusively for type
-signatures.
+SimpleRepl accepts configuration in the form of ReadEval and Print functions and can
+be driven with Step. This structure is implemented in terms of Repl which can be
+used to build more complex repls.
 
+Repls can be defined using a number of functions which wrap core PL operations such as:
+- Resolving
+- TypeChecking
+- Reducing
+- Storage/ Lookup
+- Evaluation
+
+Configuration(s) are found under PLRepl.Repl.*
+
+This abstraction exists to make it easier to define multiple repls which can be
+switched between. For example we may want repls for:
+- Different expression grammars (E.G. Lispy vs Hasky)
+- Exclusively handling type signatures
+- Accepting new Type definitions
+- Experimenting with pattern matches
+- Different underlying implementations of E.G. the parser combinator library
 |-}
 module PLRepl.Repl
-  ( Read
-  , Eval
-  , Print
-  , PrintArguments (..)
-  , ReplConfig (..)
-  , ReplState (..)
-  , emptyReplState
-  , Repl ()
-  , _unRepl
+  (
+    -- * Consumption API
+    --
+    -- | Run Repls with runRepl, execute the contained read,eval,print
+    -- steps with replStep or individually with repl{Read,Eval,Print}.
+    Repl ()
+  , runRepl
 
-  -- Core API.
-  , replStep
-  , replRead
-  , replEval
-  , replPrint
+  , ReplCtx (..)
+  , mkReplCtx
 
-  -- Convenience functions
-  , replGrammar
+  , SimpleRepl ()
+  , mkSimpleRepl
+  , step
+  , simpleReplCtx
+
+  -- * Definition API
+  --
+  -- | Can be used to build read,eval,print pipeline or just called manually.
+
+  -- * Core
+  --
+  -- | Functions on the repl itself or its context.
   , replError
-  , replTypeCheck
-  , replReduce
-  , replEvalSimple
+  , replIO
+  , replLog
+  , replModifyCtx
 
-  , SomeReplState (..)
-  , SomeReplConfig (..)
+  -- * Resolving
+  --
+  -- | Resolve names external to an AST that may be used during typechecking
+  , replGatherNames
+  , replResolveContentTypeHashes
+  , replResolveExprTypes
+
+  -- * Type checking
+  --
+  -- | Type/ kind check expressions/ types to prove they're well formed to be
+  -- reduced/ evaluated
+  , replTypeCheck
+  , replKindCheck
+
+  -- * Reduction
+  --
+  -- | Reduce valid expressions and types to their normal form, suitable to be
+  -- stored.
+  , replReduceExpr
+  , replReduceType
+
+  -- * Storage
+  --
+  -- | Store typechecked, reduced expressions, in the CodeStore as well as
+  -- types, kinds and relations such as expr-has-type and type-has-kind.
+  , ReplStoreResult (..)
+  , replStore
+
+  , replStoreExpr
+  , replStoreType
+  , replStoreKind
+  , replStoreExprHasType
+  , replStoreTypeHasKind
+
+  -- * Lookup
+  --
+  -- | Retrieve stored expressions from the CodeStore as well as types, kinds
+  -- and relations such as expr-has-type and type-has-kind.
+  , replLookup
+  , replLookupExpr
+  , replLookupType
+  , replLookupKind
+  , replLookupExprsType
+  , replLookupTypesKind
+
+  -- * Evaluation
+  --
+  -- | Evaluate type-checked, reduced expressions to produce their final result.
+  , replEvaluateExpr
+  , replEvaluateType
   )
   where
 
-import PL.Bindings
 import PL.Binds
-import PL.Case
-import PL.Commented
-import PL.Error
-import PL.Expr
-import PL.ExprLike
-import PL.Kind
-import PL.Var
-import PL.Name
-import PL.Reduce
-import PL.Hash
-import PL.HashStore
-import PL.TypeCheck
 import PL.CodeStore
+import PL.Error
+import PL.Evaluate
+import PL.Expr
+import PL.Hash
+import PL.Kind
+import PL.Name
+import PL.Pattern
+import PL.Reduce
+import PL.ReduceType
 import PL.Store
 import PL.TyVar
-import PL.Type hiding (parens)
+import PL.Type
 import PL.Type.Eq
+import PL.TypeCheck
 import PL.TypeCtx
-import PL.Pattern
-import PLLispy
-import qualified PLParser as PLParser
+import qualified PL.CodeStore as CodeStore
 
-import PLParser
+import qualified PLParser as PLParser
 import PLPrinter
 import PLGrammar
-import Reversible
 
-import Control.Applicative
-import Control.Monad (ap)
+import Control.Monad
 import Data.Foldable
-import Data.Maybe
 import Data.List (intercalate,intersperse)
+import Data.Map (Map)
+import Data.Set (Set)
 import Data.Text (Text)
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.Monoid hiding (Sum,Product)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Data.Text as Text
-import qualified Text.Megaparsec as Mega
-import Data.Map (Map)
 
-import Prelude hiding (Read)
-
--- | A Read function takes a Grammar on 'o' and attempts to parse text into an
--- 'o'.
-type Read o = Text -> Repl o o
-
--- | An Eval function transforms some value 'o'. Into a Repl function which may
--- succeed with a new expression along with its type.
--- A return value of Nothing is still a success, just with no new expression.
-type Eval o = o -> Repl o (Maybe (ExprFor DefaultPhase,TypeFor DefaultPhase))
-
--- | A Print function takes the initial text, the parsed thing 'o', a possible expression and type
--- it reduced to and returns some output Text to print.
-type Print o = PrintArguments o -> Repl o Doc
-
-data PrintArguments o = PrintArguments
-  { _readText  :: Text
-  , _parsed    :: Maybe o
-  , _evaluatedExpr :: Maybe (ExprFor CommentedPhase)
-  , _evaluatedType :: Maybe (TypeFor CommentedPhase)
-
-  , _storedExpr        :: Maybe (StoreResult Expr, Hash)
-  , _storedType        :: Maybe (StoreResult Type, Hash)
-  , _storedExprHasType :: Maybe (StoreResult Hash)
-  }
-
--- | A ReplConfig is a set of active Grammar alongside Read, Eval and Print
--- functions defined upon it.
-data ReplConfig o where
-  ReplConfig
-    :: { _someGrammar :: Grammar o -- A Grammar to read.
-       , _read        :: Read  o
-       , _eval        :: Eval  o
-       , _print       :: Print o
-       }
-    -> ReplConfig o
-
--- SomeReplConfig is a ReplConfig where the type of Grammar has been forgotten.
-data SomeReplConfig = forall o. SomeReplConfig (ReplConfig o)
-
--- | The empty ReplConfig always fails and outputs error documents for Read Eval
--- and Print.
-emptyReplConfig
-  :: ReplConfig o
-emptyReplConfig = ReplConfig
-  { _someGrammar = rempty -- The Grammar that always fails.
-  , _read        = \_ -> replError $ EMsg $ text "No read function defined in replConfig"
-  , _eval        = \_ -> replError $ EMsg $ text "No eval function defined in replConfig"
-  , _print       = \_ -> replError $ EMsg $ text "No print function defined in replConfig"
-  }
-
--- | The current st of the repl is a consistent view of type and expression bindings.
-data ReplState o = ReplState
-  { _replConfig   :: ReplConfig o
-  , _typeCheckCtx :: TypeCheckCtx
-  , _codeStore    :: CodeStore
-  }
-
--- SomeReplState is a ReplState where the type of Grammar has been forgotten.
-data SomeReplState = forall o. SomeReplState (ReplState o)
-
--- | An initial, empty replst
-emptyReplState
-  :: ReplState o
-emptyReplState = ReplState
-  { _replConfig   = emptyReplConfig
-  , _typeCheckCtx = topTypeCheckCtx mempty
-  , _codeStore    = error "No CodeStore defined"
-  }
-
--- | A Repl has replst as state which it always returns alongside a successful
--- result or an error.
+-- | Encapsulates a read, eval and print function alongside the current ReplCtx.
+-- A SimpleRepl can then be 'step'ed to run one iteration of the loop.
 --
--- This means, for example, we can update our state and throw an error at the
--- same time. One usecase would be tracking line numbers of entered expressions, valid or not.
+-- More complex interaction could be built directly with Repl.
+data SimpleRepl = forall read eval. SimpleRepl
+  { _readEval    :: Text -> Repl (read,eval)
+  , _prettyPrint :: Either (Error Expr Type Pattern TypeCtx) (read,eval) -> Doc
+  , _ctx         :: ReplCtx
+  }
+
+-- | Create a simple repl from a read, eval and print function as well as an
+-- initial context.
+mkSimpleRepl
+  :: (Text -> Repl read)
+  -> (read -> Repl eval)
+  -> (Either (Error Expr Type Pattern TypeCtx) (read,eval) -> Doc)
+  -> ReplCtx
+  -> SimpleRepl
+mkSimpleRepl read eval pprint ctx = SimpleRepl
+  { _readEval = \input -> do
+      r <- read input
+      e <- eval r
+      pure (r,e)
+  , _prettyPrint = pprint
+  , _ctx = ctx
+  }
+
+-- | Extract the current context of a SimpleRepl.
+simpleReplCtx
+  :: SimpleRepl
+  -> ReplCtx
+simpleReplCtx (SimpleRepl _ _ ctx) = ctx
+
+-- | Feed input into a SimpleRepl in order to evaluate a single step.
 --
--- 'o' is the output type the grammar specifies.
--- 'a' is the final result type.
-newtype Repl o a = Repl
-  {_unRepl :: ReplState o -> IO (ReplState o, Either (Error Expr Type Pattern TypeCtx) a)}
+-- The result contains:
+-- - A log of operations formatted as a Doc
+-- - Either:
+--   - An Error that occured somewhere in reading/ evaluating
+--   - The next SimpleRepl - indicating success -
+step
+  :: SimpleRepl
+  -> Text
+  -> IO (Doc, Either (Error Expr Type Pattern TypeCtx) SimpleRepl)
+step (SimpleRepl readEval print ctx) txt = do
+  (ctx',log,res) <- runRepl ctx $ readEval txt
+  case res of
+    Left err
+      -> pure . (log,) . Left $ err
 
-instance Functor (Repl o) where
-  fmap f (Repl r) = Repl $ \st -> do (st',res) <- r st
-                                     pure (st', case res of
-                                                  Left err -> Left err
-                                                  Right a  -> Right $ f a)
+    Right _
+      -> pure . (log <> lineBreak <> print res,) . Right $ SimpleRepl readEval print ctx'
 
-instance Applicative (Repl o) where
+-- | Context Repl's execute under.
+--
+-- Contains:
+-- - State that computations may access, such as type contexts' and
+--   codestores.
+-- - Configured Read, Eval, Print functions that Repl functions may use.
+data ReplCtx = ReplCtx
+  { _replTypeCtx   :: TypeCtx             -- ^ The type definitions in scope
+  , _replCodeStore :: CodeStore.CodeStore -- ^ Access to a CodeStore for lookup and storage
+  }
+
+-- | Create a repl context with some initial state.
+mkReplCtx
+  :: TypeCtx
+  -> CodeStore.CodeStore
+  -> ReplCtx
+mkReplCtx typeCtx codeStore = ReplCtx
+  { _replTypeCtx   = typeCtx
+  , _replCodeStore = codeStore
+  }
+
+-- | Repls are functions which:
+-- - Have access to some ReplState which can change under success or failure
+-- - May fail with an Error
+-- - May succeed with a Value
+-- - Accumulates a log of what it did as a Doc
+newtype Repl a = Repl
+  {_unRepl :: ReplCtx
+           -> IO ( ReplCtx
+                 , Doc
+                 , Either (Error Expr Type Pattern TypeCtx)
+                           a
+                 )
+  }
+
+instance Functor Repl where
+  fmap f (Repl r) = Repl $ \st -> do
+    (st',log,res) <- r st
+    pure (st', log, case res of
+      Left err -> Left err
+      Right a  -> Right $ f a)
+
+instance Applicative Repl where
   pure = return
   (<*>) = ap
 
+instance Monad Repl where
+  return a = Repl $ \st -> pure (st,mempty,Right a)
 
-instance Monad (Repl o) where
-  return a = Repl $ \st -> pure (st,Right a)
+  (Repl f) >>= fab = Repl $ \st -> do
+    (st',log,res) <- f st
+    case res of
+      Left err -> pure (st',log,Left err)
+      Right a  -> do let Repl g = fab a
+                     (st'',log',res') <- g st'
+                     pure (st'',log<>log',res')
 
-  (Repl f) >>= fab = Repl $ \st -> do (st',res) <- f st
-                                      case res of
-                                          Left err -> pure (st',Left err)
-                                          Right a  -> let Repl g = fab a
-                                                         in g st'
 
 -- | Inject an error into the repl
 replError
   :: Error Expr Type Pattern TypeCtx
-  -> Repl o x
-replError err = Repl $ \st -> pure (st,Left err)
+  -> Repl x
+replError err = Repl $ \st -> pure (st, mempty, Left err)
 
--- Resolving checks every top-level referenced expression:
--- - Has an associated type hash
--- - Associated type has has an associated type
+-- | Lift an IO action into the Repl
+replIO
+  :: IO a
+  -> Repl a
+replIO f = Repl $ \st -> f >>= \a -> pure (st, mempty, Right a)
+
+-- | Append a log line to the repl to be accessible at the end of execution.
+replLog
+  :: Doc
+  -> Repl ()
+replLog d = Repl $ \st -> pure (st, d, Right ())
+
+-- | Retrieve the codestore
+replCodeStore
+  :: Repl CodeStore.CodeStore
+replCodeStore = Repl $ \st -> pure (st, mempty, Right $ _replCodeStore st)
+
+-- | Retrieve the type context
+replTypeCtx
+  :: Repl TypeCtx
+replTypeCtx = Repl $ \st -> pure (st, mempty, Right $ _replTypeCtx st)
+
+-- | Mutate the underlying ReplCtx
+replModifyCtx
+  :: (ReplCtx -> ReplCtx)
+  -> Repl ()
+replModifyCtx f = Repl $ \ctx -> pure (f ctx, mempty, Right ())
+
+
+{- Consumption API -}
+
+-- | Execute a Repl function to produce its final state and either an error or a
+-- successful result.
+runRepl
+  :: ReplCtx
+  -> Repl a
+  -> IO ( ReplCtx
+        , Doc
+        , Either (Error Expr Type Pattern TypeCtx)
+                 a
+        )
+runRepl ctx r = _unRepl r ctx
+
+{- Definition API -}
+
+{-  Resolving -}
+
+-- | Gather all top-level names that refer to external expressions.
+replGatherNames
+  :: Expr
+  -> Repl (Set ContentName)
+replGatherNames = pure . gatherNames
+
+-- | Resolve all expression ContentNames to their type hash.
 --
--- And if so, adds each type association to the typechecking context.
--- Returns the type associations that were successfully resolved and introduced.
-replResolveExprsTypes
+-- Fails if any name does not resolve.
+replResolveContentTypeHashes
+  :: Set ContentName
+  -> Repl (Map ContentName Hash)
+replResolveContentTypeHashes =
+  fmap Map.fromList . mapM (\h -> do ty <- replLookupExprsType . contentName $ h
+                                     pure (h,ty)
+                           )
+                    . Set.toList
+
+-- | Resolving checks every top-level referenced expression:
+-- - Has an associated type hash
+-- - Whose type hash has an associated type
+--
+-- And if so returns those associations.
+replResolveExprTypes
   :: Expr
-  -> Repl o (Map ContentName Type)
-replResolveExprsTypes expr = Repl $ \st -> do
-  -- TODO: Break this logic out into individual operations, consider migrating to CodeStore
+  -> Repl (Map ContentName Type)
+replResolveExprTypes expr =
+  replGatherNames expr >>= replResolveContentTypeHashes
+                       >>= mapM replLookupType
 
-  let codeStore = _codeStore st
-  let referencedNames = gatherNames expr
+{-  Type checking -}
 
-  -- For each immediately referenced name, query for its type hash,
-  -- accumulating:
-  -- - The resulting codestore
-  -- - Any expressions which could not be resolved
-  -- - A mapping of expression hashes to type hashes for things which could be
-  --   resolved.
-  (codeStore',unresolved,resolved)
-    <- foldrM (\exprHash (codeStore, accUnresolved, accResolved)
-                 -> do mRes <- lookupExprType codeStore exprHash
-                       pure $ case mRes of
-                         Nothing
-                           -> (codeStore, Set.insert exprHash accUnresolved, accResolved)
-                         Just (codeStore', typeHash)
-                           -> (codeStore, accUnresolved, Map.insert exprHash typeHash accResolved)
-              )
-              (codeStore, Set.empty, Map.empty)
-              (fmap contentName . Set.toList $ referencedNames)
-
-  -- If we have any unresolved, stop and report an error
-  if not $ Set.null unresolved
-    then pure (st{_codeStore = codeStore'}
-              ,Left . EMsg . mconcat $
-                [ text "Could not resolve referenced expressions to hashes:"
-                , lineBreak
-                , mconcat . intersperse lineBreak . map (text . showBase58) . Set.toList $ unresolved
-                , lineBreak
-                , text "After gathering names:"
-                , lineBreak
-                , mconcat . intersperse lineBreak . map document . Set.toList $ referencedNames
-                , lineBreak, lineBreak
-                ]
-              )
-
-    -- All expression hashes had an associated type hash.
-    -- Now resolve each type hash to a type.
-    -- Note we're not:
-    -- - Checking the expr hashes resolve
-    -- - Validating the expression actually has the type the codebase claims.
-    else do (codeStore'',unresolvedTypes,resolvedTypes)
-              <- foldrM (\(exprHash,typeHash) (codeStore, accUnresolved, accResolved)
-                          -> do mRes <- lookupType codeStore typeHash
-                                pure $ case mRes of
-                                  Nothing
-                                    -> (codeStore, Set.insert (exprHash,typeHash) accUnresolved, accResolved)
-
-                                  Just (codeStore', typ)
-                                    -> (codeStore', accUnresolved, Map.insert exprHash typ accResolved)
-                        )
-                        (codeStore', Set.empty, Map.empty)
-                        (Map.toList resolved)
-
-            -- If any type hashes did not resolve, stop and report an error.
-            if not $ Set.null unresolved
-              then pure (st{_codeStore = codeStore''}
-                        ,Left . EMsg . mconcat $
-                          [ text "All referenced expressions resolved to a type hash however some type hashes did not resolve to a type:"
-                          , lineBreak
-                          , string . show $ unresolvedTypes
-                          ]
-                        )
-              else let typeCheckCtx  = _typeCheckCtx st
-                       typeMappings  = _contentHasType typeCheckCtx
-
-                       newMappings = Map.mapKeys mkContentName resolvedTypes
-
-                       typeMappings' = Map.union newMappings typeMappings
-                       typeCheckCtx' = typeCheckCtx{_contentHasType = typeMappings'}
-                    in pure (st{_codeStore    = codeStore''
-                               ,_typeCheckCtx = typeCheckCtx'
-                               }
-                            ,Right newMappings
-                            )
-
-  -- For each name, query the CodeStore for the associated type
-  -- Add each associated type to the type context
-
--- Type check an expression in the repl context.
+-- | Check that a top-level expression has a valid type.
 replTypeCheck
-  :: Expr
-  -> Repl o Type
-replTypeCheck expr = Repl $ \st -> pure $
-  case exprType (_typeCheckCtx st) expr of
+  :: Map ContentName Type
+  -> Expr
+  -> Repl Type
+replTypeCheck contentBindingTypes expr = do
+  typeCtx <- replTypeCtx
+  let typeCheckCtx = (topTypeCheckCtx typeCtx){_contentHasType = contentBindingTypes}
+  case exprType typeCheckCtx expr of
     Left err
-      -> (st,Left err)
+      -> replError $ EContext (EMsg $ text "Type-checking top-level expression") $ err
 
     Right ty
-      -> (st,Right ty)
+      -> pure ty
 
--- Get the type context the repl is using to parse/ evaluate types.
-replTypeCtx
-  :: Repl o TypeCtx
-replTypeCtx = Repl $ \st -> pure (st, Right . _typeCtx . _typeCheckCtx $ st)
+-- | Check that a type has a valid kind under some bindings.
+replKindCheck
+  :: Type
+  -> BindCtx TyVar Kind
+  -> Repl Kind
+replKindCheck typ typeKinds = do
+  typeCtx <- replTypeCtx
+  case typeKind typeKinds typeCtx typ of
+    Left err
+      -> replError $ EContext (EMsg $ text "Kind-checking top-level type") $ err
 
--- Reduce an expression in the repl context.
-replReduce
+    Right kind
+      -> pure kind
+
+{-  Reducing -}
+
+-- | Reduce a top-level expression to its normal form means:
+--
+-- - Variable bindings are substituted under known function applications
+-- - Known case statements reduce to their matched branches
+-- - Named expressions are _not_ substituted
+replReduceExpr
   :: Expr
-  -> Repl o Expr
-replReduce initialExpr = do
-  underTypeCtx <- replTypeCtx
-  case reduce (topReductionCtx underTypeCtx) initialExpr of
-    Left err   -> replError err
-    Right expr -> pure expr
+  -> Repl Expr
+replReduceExpr expr = do
+  typeCtx <- replTypeCtx
+  case reduce (topReductionCtx typeCtx) expr of
+    Left err
+      -> replError $ EContext (EMsg $ text "Reducing top-level expression") $ err
 
--- A simple Eval function which takes a plain Expr, type checks it
--- and then reduces.
-replEvalSimple
-  :: Eval CommentedExpr
-replEvalSimple commentedExpr = do
-  let expr = stripComments commentedExpr
+    Right reducedExpr
+      -> pure reducedExpr
 
-  replResolveExprsTypes expr
+-- | Reduce a top-level type to its normal form means:
+--
+-- - Type bindings are substituted under known type function applications
+replReduceType
+  :: Type
+  -> Repl Type
+replReduceType typ = do
+  typeCtx <- replTypeCtx
+  case reduceType (topTypeReductionCtx typeCtx) typ of
+    Left err
+      -> replError $ EContext (EMsg $ text "Reducing top-level type") $ err
 
-  ty      <- replTypeCheck expr
-  redExpr <- replReduce    expr
-  pure $ Just (redExpr,ty)
+    Right reducedType
+      -> pure reducedType
 
--- | Feed read text into the Repls configured read function.
-replRead
-  :: Read o
-replRead input = Repl $ \replState ->
-  let readF      = _read . _replConfig $ replState
-      Repl replF = readF input
-    in replF replState
+{-  Storing -}
 
-replEval
-  :: Eval o
-replEval a = Repl $ \replState ->
-  let evalF = _eval . _replConfig $ replState
-      Repl replF = evalF a
-   in replF replState
-
--- Store an expression, it's type and cache the relation that the expression has
--- been checked to have the type - this should be true if you don't want bad
--- things to happen.
-replStore
-  :: (Expr,Type)
-  -> Repl o ((StoreResult Expr,Hash)
-            ,(StoreResult Type,Hash)
-            ,StoreResult Hash
-            )
-replStore (expr,typ) = (,,) <$> replStoreExpr expr
-                            <*> replStoreType typ
-                            <*> replStoreExprHasType (expr,typ)
-
--- Store an expression in the codestore
+-- | Store an expression by it's hash.
+--
+-- The returned hash can be used to retrieve the Expr.
+--
+-- The StoreResult indicates different forms of success, E.G. Whether:
+-- - An old Expr was replaced.
+-- - An identical expression was already stored.
+--
+-- Failures are indicated in the underlying Error type.
 replStoreExpr
   :: Expr
-  -> Repl o (StoreResult Expr, Hash)
-replStoreExpr expr = Repl $ \replState -> do
-  let codeStore = _codeStore replState
-  mStoreExpr <- storeExpr codeStore expr
-  pure $ case mStoreExpr of
+  -> Repl (StoreResult Expr, Hash)
+replStoreExpr expr = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ storeExpr codeStore expr
+  case mRes of
     Nothing
-      -> (replState, Left . EMsg . text $ "Failed to store expression")
+      -> replError $ EMsg $ text "Failed to store expression"
 
-    Just (codeStore', exprRes, exprHash)
-      -> (replState{_codeStore = codeStore'}, Right (exprRes,exprHash))
+    Just (codeStore', storeResult, hash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure (storeResult, hash)
 
--- Store a type in the codestore
+-- | Store a type by it's hash.
+--
+-- The returned hash can be used to retrieve the Type.
+--
+-- The StoreResult indicates different forms of success, E.G. Whether:
+-- - An old type was replaced.
+-- - An identical type was already stored.
+--
+-- Failures are indicated in the underlying Error type.
 replStoreType
   :: Type
-  -> Repl o (StoreResult Type, Hash)
-replStoreType typ = Repl $ \replState -> do
-  let codeStore = _codeStore replState
-  mStoreType <- storeType codeStore typ
-  pure $ case mStoreType of
+  -> Repl (StoreResult Type, Hash)
+replStoreType typ = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ storeType codeStore typ
+  case mRes of
     Nothing
-      -> (replState, Left . EMsg . text $ "Failed to store type")
+      -> replError $ EMsg $ text "Failed to store type"
 
-    Just (codeStore', typeRes, typeHash)
-      -> (replState{_codeStore = codeStore'}, Right (typeRes,typeHash))
+    Just (codeStore', storeResult, hash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure (storeResult, hash)
 
--- Store the relation that an expression has been checked to have a type.
--- You should ensure this is true.
+-- | Store a kind by it's hash.
 --
--- The result may contain the Hash of the replacement type if the type has
--- somehow changed.
+-- The returned hash can be used to retrieve the Kind.
+--
+-- The StoreResult indicates different forms of success, E.G. Whether:
+-- - An old kind was replaced.
+-- - An identical kind was already stored.
+--
+-- Failures are indicated in the underlying Error type.
+replStoreKind
+  :: Kind
+  -> Repl (StoreResult Kind, Hash)
+replStoreKind kind = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ storeKind codeStore kind
+  case mRes of
+    Nothing
+      -> replError $ EMsg $ text "Failed to store kind"
+
+    Just (codeStore', storeResult, hash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure (storeResult, hash)
+
+-- | Store a promise that an expression referred to by a hash has a type given
+-- by a hash.
+--
+-- The StoreResult indicates different forms of success, E.G. Whether:
+-- - An old Type was replaced.
+-- - An identical relation was already stored.
+--
+-- Failures are indicated in the underlying Error type.
 replStoreExprHasType
-  :: (Expr,Type)
-  -> Repl o (StoreResult Hash)
-replStoreExprHasType (expr,typ) = Repl $ \replState -> do
-  let codeStore = _codeStore replState
-  mStoreExprType <- storeExprHasType codeStore (hash expr,hash typ)
-  pure $ case mStoreExprType of
+  :: (Hash, Hash)
+  -> Repl (StoreResult Hash)
+replStoreExprHasType (exprHash,typeHash) = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ storeExprHasType codeStore (exprHash, typeHash)
+  case mRes of
     Nothing
-      -> (replState, Left . EMsg . text $ "Failed to associate expression with type")
+      -> replError $ EMsg $ text "Failed to store expression-has-type relation"
 
-    Just (codeStore', exprTypeRes)
-      -> (replState{_codeStore = codeStore'}, Right exprTypeRes)
+    Just (codeStore', storeResult)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure storeResult
 
--- | Acquire the Grammar the Repl is using to parse/ print 'o's.
-replGrammar
-  :: Repl o (Grammar o)
-replGrammar = Repl $ \replState -> pure (replState, Right . _someGrammar . _replConfig $ replState)
-
--- | Defer to the print function to print:
--- - The original text supplied by the user
--- - A parsed thing
--- - A possible expression and type it reduced to.
-replPrint
-  :: Print o
-replPrint printArgs = Repl $ \replState ->
-  let printF = _print . _replConfig $ replState
-      Repl replF = printF printArgs
-   in replF replState
-
--- Read, Eval and return the text to be printed.
--- Drive this function with input, do something with the output and loop for a
--- REPL.
-replStep
-  :: Text
-  -> Repl o Doc
-replStep input = do
-  let printArguments = PrintArguments
-        { _readText      = input
-        , _parsed        = Nothing
-        , _evaluatedExpr = Nothing
-        , _evaluatedType = Nothing
-        , _storedExpr    = Nothing
-        , _storedType    = Nothing
-        , _storedExprHasType = Nothing
-        }
-
-  parsedOutput <- replRead input
-
-  mEvaluated <- replEval parsedOutput
-  case mEvaluated of
+-- | Store a promise that a type referred to by a hash has a kind given
+-- by a hash.
+--
+-- The StoreResult indicates different forms of success, E.G. Whether:
+-- - An old Kind was replaced.
+-- - An identical relation was already stored.
+--
+-- Failures are indicated in the underlying Error type.
+replStoreTypeHasKind
+  :: (Hash, Hash)
+  -> Repl (StoreResult Hash)
+replStoreTypeHasKind (typeHash,kindHash) = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ storeTypeHasKind codeStore (typeHash, kindHash)
+  case mRes of
     Nothing
-      -> replPrint printArguments
-           {_parsed = Just parsedOutput
-           }
+      -> replError $ EMsg $ text "Failed to store type-has-kind relation"
 
-    Just (evalExpr,evalType)
-      -> do (storedExpr, storedType, storedExprHasType) <- replStore (evalExpr,evalType)
-            replPrint printArguments
-              { _parsed            = Just parsedOutput
-              , _evaluatedExpr     = Just $ addComments evalExpr
-              , _evaluatedType     = Just $ addTypeComments evalType
-              , _storedExpr        = Just storedExpr
-              , _storedType        = Just storedType
-              , _storedExprHasType = Just storedExprHasType
-              }
+    Just (codeStore', storeResult)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure storeResult
+
+-- | Store a typed expression means to:
+-- - Store the expression
+-- - Store the type
+-- - Store the expression-has-type relation
+--
+-- The returned hashes can be used to lookup the expression and type
+-- respectively.
+--
+-- It is the callers responsibility to ensure the expression has been type
+-- checked to have the provided type.
+--
+-- The StoreResult indicates different forms of success, E.G. Whether:
+-- - An old entity was replaced.
+-- - An identical entity was already stored.
+--
+-- Failures are indicated in the underlying Error type.
+replStore
+  :: Expr
+  -> Type
+  -> Kind
+  -> Repl ReplStoreResult
+replStore expr typ kind = do
+  (exprResult,exprHash) <- replStoreExpr expr
+  (typeResult,typeHash) <- replStoreType typ
+  (kindResult,kindHash) <- replStoreKind kind
+  hasTypeRes <- replStoreExprHasType (exprHash,typeHash)
+  hasKindRes <- replStoreExprHasType (typeHash,kindHash)
+  pure $ ReplStoreResult
+    { _exprHash = exprHash
+    , _typeHash = typeHash
+    , _kindHash = kindHash
+
+    , _exprResult = exprResult
+    , _typeResult = typeResult
+    , _kindResult = kindResult
+    , _exprHasTypeResult = hasTypeRes
+    , _typeHasKindResult = hasKindRes
+    }
+
+-- | The result of storing an expr : type : kind
+-- Contains:
+-- - The hashes of the stored {expr,type,kind}s
+-- - The success result of storing each {expr,type,Kind} (I.E. whether an old value was replaced).
+-- - The success result of storing the expr-has-type and type-has-kind relation (I.E. whether an old relation was replaced).
+data ReplStoreResult = ReplStoreResult
+  { _exprHash :: Hash
+  , _typeHash :: Hash
+  , _kindHash :: Hash
+
+  , _exprResult :: StoreResult Expr
+  , _typeResult :: StoreResult Type
+  , _kindResult :: StoreResult Kind
+  , _exprHasTypeResult :: StoreResult Hash
+  , _typeHasKindResult :: StoreResult Hash
+  }
+
+{-  Lookup -}
+
+-- | Lookup an Expression, it's Type and it's Types Kind by the expressions
+-- Hash.
+--
+-- Hashes may be acquired from a prior replStore or found as a ContentBinding
+-- inside an expression.
+replLookup
+  :: Hash
+  -> Repl (Expr,Type,Kind)
+replLookup exprHash = do
+  expr     <- replLookupExpr      exprHash
+  typeHash <- replLookupExprsType exprHash
+  typ      <- replLookupType      typeHash
+  kindHash <- replLookupTypesKind typeHash
+  kind     <- replLookupKind      kindHash
+  pure (expr,typ,kind)
+
+-- | Lookup an expr by its Hash.
+--
+-- Hashes may be acquired from a prior replStoreExpr or found as a
+-- ContentBinding inside an expression.
+replLookupExpr
+  :: Hash
+  -> Repl Expr
+replLookupExpr exprHash = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ lookupExpr codeStore exprHash
+  case mRes of
+    Nothing
+      -> replError $ EMsg $ text "Failed to lookup expr"
+
+    Just (codeStore', expr)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure expr
+
+-- | Lookup a type by its Hash.
+--
+-- Hashes may be acquired from a prior replStoreType.
+replLookupType
+  :: Hash
+  -> Repl Type
+replLookupType typeHash = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ lookupType codeStore typeHash
+  case mRes of
+    Nothing
+      -> replError $ EMsg $ text "Failed to lookup type"
+
+    Just (codeStore', typ)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure typ
+
+-- | Lookup a kind by its Hash.
+--
+-- Hashes may be acquired from a prior replStoreKind.
+replLookupKind
+  :: Hash
+  -> Repl Kind
+replLookupKind kindHash = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ lookupKind codeStore kindHash
+  case mRes of
+    Nothing
+      -> replError $ EMsg $ text "Failed to lookup kind"
+
+    Just (codeStore', kind)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure kind
+
+-- | Given an Expr Hash lookup the assocaited Type hash.
+--
+-- It is the callers responsibility to validate whether the association is true
+-- if the backing storage is not reliable.
+replLookupExprsType
+  :: Hash
+  -> Repl Hash
+replLookupExprsType exprHash = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ lookupExprType codeStore exprHash
+  case mRes of
+    Nothing
+      -> replError $ EMsg $ text "Failed to lookup exprs type"
+
+    Just (codeStore', typeHash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure typeHash
+
+-- | Given an Expr Hash lookup the assocaited Type hash.
+--
+-- It is the callers responsibility to validate whether the association is true
+-- if the backing storage is not reliable.
+replLookupTypesKind
+  :: Hash
+  -> Repl Hash
+replLookupTypesKind typeHash = do
+  codeStore <- replCodeStore
+  mRes <- replIO $ lookupTypeKind codeStore typeHash
+  case mRes of
+    Nothing
+      -> replError $ EMsg $ text "Failed to lookup types kind"
+
+    Just (codeStore', kindHash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure kindHash
+
+{-  Evaluation -}
+
+-- | Evaluating a top-level expression (which is expected to be reduced and
+-- type-checked) by substituting ContentBindings from the CodeStore, binding
+-- variables and reducing until the expression no longer changes.
+--
+-- Unlike reduction, evaluation:
+-- - Does not evaluate under abstractions (such as lambdas and type-lambdas)
+-- - _Does_ evaluate under ContentBindings (which must be available in the
+-- CodeStore).
+--
+-- Evaluate should eventually terminate given enough gas as there are currently
+-- no recursive references allowed in the AST, nor are there self-references.
+replEvaluateExpr
+  :: Expr
+  -> Maybe Int -- ^ Optional gas limit. When reached, evaluation will halt.
+  -> Repl (EvaluationCtx, Expr)
+replEvaluateExpr expr gas = do
+  typeCtx   <- replTypeCtx
+  codeStore <- replCodeStore
+  let evaluationCtx = (topEvaluationCtx typeCtx codeStore){ _evaluationGas = gas }
+
+  eRes <- replIO . runEvaluate evaluationCtx . evaluate $ expr
+  case eRes of
+    Left err
+      -> replError $ EContext (EMsg $ text "Evaluating top-level expression") $ err
+
+    Right (evaluationCtx, reducedExpr)
+      -> pure (evaluationCtx, reducedExpr)
+
+-- | Evaluating a top-level type (which is expected to be reduced and
+-- kind-checked) by binding variables and reducing until the type no longer
+-- changes.
+--
+-- This is currently identical to reduceType.
+replEvaluateType
+  :: Type
+  -> Maybe Int
+  -> Repl (EvaluationCtx, Type)
+replEvaluateType typ gas = do
+  typeCtx   <- replTypeCtx
+  codeStore <- replCodeStore
+  let evaluationCtx = (topEvaluationCtx typeCtx codeStore){ _evaluationGas = gas }
+
+  eRes <- replIO . runEvaluate evaluationCtx . evaluateType $ typ
+  case eRes of
+    Left err
+      -> replError $ EContext (EMsg $ text "Evaluating top-level type") $ err
+
+    Right (evaluationCtx, reducedType)
+      -> pure (evaluationCtx, reducedType)
 

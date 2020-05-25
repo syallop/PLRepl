@@ -45,6 +45,6 @@ data Event n
   -- Toggle focus to a name.
   | FocusOn (Maybe n)
 
-  -- The ReplState has been replaced with this value.
-  | ReplaceReplState SomeReplState
+  -- The Repl has been replaced with this value.
+  | ReplaceCurrentRepl SimpleRepl
 

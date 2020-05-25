@@ -70,6 +70,7 @@ import qualified PLLispy.Level as L
 import Data.Map (Map)
 import Data.Maybe
 import Data.Text (Text)
+import Control.Monad.IO.Class
 import Data.Text.Encoding
 import System.Random
 import qualified Data.Map as Map
@@ -97,8 +98,8 @@ data Event n
 
   | Read
   | Eval Text
-  | PrintFail (Error Expr Type Pattern TypeCtx) SomeReplState
-  | PrintSuccess (PLPrinter.Doc) SomeReplState
+  | PrintFail (Error Expr Type Pattern TypeCtx) PLPrinter.Doc
+  | PrintSuccess (PLPrinter.Doc) SimpleRepl
 
 main :: IO ()
 main = do
@@ -302,45 +303,49 @@ handleEvent ev (State st) = case ev of
   -- Attempt to evaluate text
   Eval txt
     -> (State st) <# do
-         (someReplState',eRes) <- case PL._replState st of
-                                      SomeReplState replState
-                                        -> do let step = replStep txt
-                                              (nextState, result) <- _unRepl step replState
-                                              pure (SomeReplState nextState, result)
+         (log,eRes) <- liftIO . (`step` txt) . PL._currentRepl $ st
          case eRes of
              Left err
-               -> pure $ PrintFail err someReplState'
-             Right a
-               -> pure $ PrintSuccess a someReplState'
+               -> pure $ PrintFail err log
+
+             Right replacementRepl
+               -> pure $ PrintSuccess log replacementRepl
 
   -- Failed to evaluate text
-  PrintFail err newReplState
-    -> let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
+  PrintFail err log
+    -> let ppType    = fromMaybe mempty . pprint (toPrinter $ sub $ typ tyVar) . addTypeComments
            ppPattern = fromMaybe mempty . pprint (toPrinter $ top $ pattern var tyVar) . addPatternComments
-           ppExpr = fromMaybe mempty . pprint (toPrinter $ top $ expr var (top $ typ tyVar) tyVar) . addComments
+           ppExpr    = fromMaybe mempty . pprint (toPrinter $ top $ expr var (top $ typ tyVar) tyVar) . addComments
            ppVar     = fromMaybe mempty . pprint (toPrinter var)
            ppTyVar   = fromMaybe mempty . pprint (toPrinter tyVar)
-        in noEff $ State st{ PL._replState    = newReplState
-                           , PL._outputState  = PL.newOutputState . Text.lines . PLPrinter.render . PL.ppError ppPattern ppType ppExpr (ppTypeCtx document (ppTypeInfo ppType)) ppVar ppTyVar $ err
-                           , PL._typeCtxState = PL.typeCtxStateGivenReplState newReplState
+        in noEff $ State st{ PL._outputState  = PL.newOutputState . Text.lines
+                                                                  . PLPrinter.render
+                                                                  . mconcat $
+                                                                      [ lineBreak
+                                                                      , log
+                                                                      , lineBreak
+                                                                      , ppError ppPattern ppType ppExpr (ppTypeCtx document (ppTypeInfo ppType)) ppVar ppTyVar $ err
+                                                                      ]
                            , PL._focusOn      = Just OutputCursor
                            }
 
+
   -- Successfully evaluated text
-  PrintSuccess a newReplState
-    -> noEff $ State  st{ PL._replState    = newReplState
-                        , PL._editorState  = PL.emptyEditorState
-                        , PL._outputState  = PL.newOutputState $ Text.lines $ PLPrinter.renderDocument a
-                        , PL._typeCtxState = PL.typeCtxStateGivenReplState newReplState
-                        , PL._focusOn      = Just EditorCursor
-                        }
+  PrintSuccess log replacementRepl
+    -> noEff $ State st{ PL._currentRepl  = replacementRepl
+                       , PL._editorState  = PL.emptyEditorState
+                       , PL._outputState  = PL.newOutputState . Text.lines . PLPrinter.renderDocument $ log
+                       , PL._typeCtxState = PL.typeCtxStateGivenReplTypeCtx . _replTypeCtx . simpleReplCtx $ replacementRepl
+                       , PL._focusOn      = Just EditorCursor
+                       }
+
 
   -- Events to core internal widgets
   PLEvent plEv
     -> case plEv of
          -- Replace the entire repl state
-         ReplaceReplState someReplState'
-          -> noEff $ State $ st{PL._replState = someReplState'}
+         ReplaceCurrentRepl replacementRepl
+          -> noEff $ State $ st{PL._currentRepl = replacementRepl}
 
          -- An event for the editor
          EditorEv editorEv
@@ -393,9 +398,7 @@ drawUI (State st) = div_
   , div_
       [ id_ "context-widgets"
       ]
-      [ drawTypeCtx TypeCtxCursor (case PL._replState st of
-                                     SomeReplState replState -> _typeCtx . _typeCheckCtx $ replState
-                                  )
+      [ drawTypeCtx TypeCtxCursor (_replTypeCtx . simpleReplCtx . PL._currentRepl $ st)
       , drawUsage UsageCursor (PL._usageState st)
       ]
   ]
