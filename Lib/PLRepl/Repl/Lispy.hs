@@ -107,15 +107,7 @@ lispyExprRepl codeStore =
         let expr = stripComments commentedExpr
 
         -- Type check
-        contentBindingTypes <- replResolveExprTypes expr
-        replLog . mconcat $ if Map.null contentBindingTypes
-          then mempty
-          else [ lineBreak
-               , text "All named expressions referenced at the top-level have a known type."
-               , lineBreak
-               ]
-
-        checkedType <- replTypeCheck contentBindingTypes expr
+        checkedType <- replResolveAndTypeCheck expr
         replLog . mconcat $
           [ lineBreak
           , text "Expression is well typed with type:"
@@ -124,7 +116,16 @@ lispyExprRepl codeStore =
           , lineBreak
           ]
 
-        checkedKind <- replKindCheck checkedType emptyCtx
+        -- Kind check
+        contentBindingKinds <- replResolveTypesTypeContentKinds checkedType
+        replLog . mconcat $ if Map.null contentBindingKinds
+          then mempty
+          else [ lineBreak
+               , text "All named types referenced at the top-level have a known kind."
+               , lineBreak
+               ]
+
+        checkedKind <- replKindCheck contentBindingKinds emptyCtx checkedType
         replLog . mconcat $
           [ lineBreak
           , text "Whose type has kind:"

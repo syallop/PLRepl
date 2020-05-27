@@ -63,14 +63,26 @@ module PLRepl.Repl
   -- * Resolving
   --
   -- | Resolve names external to an AST that may be used during typechecking
-  , replGatherNames
-  , replResolveContentTypeHashes
-  , replResolveExprTypes
+  -- Ironically these function names themselves are bad.
+  -- This is because the types arent specific enough to rule out misuse so care
+  -- needs to be taken choosing the right function for the expected sort of
+  -- contentname.
+  , replGatherExprsExprContentNames
+  , replGatherExprsTypeContentNames
+  , replGatherTypesTypeContentNames
+
+  , replResolveExprContentTypeHashes
+  , replResolveTypeContentKindHashes
+
+  , replResolveExprsExprContentTypes
+  , replResolveTypesTypeContentKinds
+  , replResolveExprsTypeContentTypes
 
   -- * Type checking
   --
   -- | Type/ kind check expressions/ types to prove they're well formed to be
   -- reduced/ evaluated
+  , replResolveAndTypeCheck
   , replTypeCheck
   , replKindCheck
 
@@ -310,19 +322,54 @@ runRepl ctx r = _unRepl r ctx
 {-  Resolving -}
 
 -- | Gather all top-level names that refer to external expressions.
-replGatherNames
+replGatherExprsExprContentNames
   :: Expr
   -> Repl (Set ContentName)
-replGatherNames = pure . gatherNames
+replGatherExprsExprContentNames = pure . gatherContentNames
+
+-- | Gather all top-level names that refer to external types.
+replGatherExprsTypeContentNames
+  :: Expr
+  -> Repl (Set ContentName)
+replGatherExprsTypeContentNames = pure . gatherExprsTypeContentNames
+
+-- | Gather all top-level names that refer to external types.
+replGatherTypesTypeContentNames
+  :: Type
+  -> Repl (Set ContentName)
+replGatherTypesTypeContentNames = pure . gatherTypeContentNames
+
 
 -- | Resolve all expression ContentNames to their type hash.
 --
 -- Fails if any name does not resolve.
-replResolveContentTypeHashes
+replResolveExprContentTypeHashes
   :: Set ContentName
   -> Repl (Map ContentName Hash)
-replResolveContentTypeHashes =
+replResolveExprContentTypeHashes =
   fmap Map.fromList . mapM (\h -> do ty <- replLookupExprsType . contentName $ h
+                                     pure (h,ty)
+                           )
+                    . Set.toList
+
+-- Fails if any name does not resolve.
+replResolveTypeContentTypes
+  :: Set ContentName
+  -> Repl (Map ContentName Type)
+replResolveTypeContentTypes =
+  fmap Map.fromList . mapM (\h -> do ty <- replLookupType . contentName $ h
+                                     pure (h,ty)
+                           )
+                    . Set.toList
+
+-- | Resolve all type ContentNames to their kind hash.
+--
+-- Fails if any name does not resolve.
+replResolveTypeContentKindHashes
+  :: Set ContentName
+  -> Repl (Map ContentName Hash)
+replResolveTypeContentKindHashes =
+  fmap Map.fromList . mapM (\h -> do ty <- replLookupTypesKind . contentName $ h
                                      pure (h,ty)
                            )
                     . Set.toList
@@ -332,23 +379,60 @@ replResolveContentTypeHashes =
 -- - Whose type hash has an associated type
 --
 -- And if so returns those associations.
-replResolveExprTypes
+replResolveExprsExprContentTypes
   :: Expr
   -> Repl (Map ContentName Type)
-replResolveExprTypes expr =
-  replGatherNames expr >>= replResolveContentTypeHashes
-                       >>= mapM replLookupType
+replResolveExprsExprContentTypes expr =
+  replGatherExprsExprContentNames expr
+    >>= replResolveExprContentTypeHashes
+    >>= mapM replLookupType
+
+-- | Resolving checks every top-level referenced type:
+-- - Has an associated kind hash
+-- - Whose kind hash has an associated kind
+--
+-- And if so returns those associations.
+replResolveTypesTypeContentKinds
+  :: Type
+  -> Repl (Map ContentName Kind)
+replResolveTypesTypeContentKinds typ =
+  replGatherTypesTypeContentNames typ
+    >>= replResolveTypeContentKindHashes
+    >>= mapM replLookupKind
+
+-- | Resolving checks every top-level referenced type has an associated type and
+-- returns the associations.
+replResolveExprsTypeContentTypes
+  :: Expr
+  -> Repl (Map ContentName Type)
+replResolveExprsTypeContentTypes expr =
+  replGatherExprsTypeContentNames expr
+    >>= replResolveTypeContentTypes
 
 {-  Type checking -}
 
+-- | Check that a top-level expression has a valid type
+-- , after resolving content-bindings types from the codestore.
+replResolveAndTypeCheck
+  :: Expr
+  -> Repl Type
+replResolveAndTypeCheck expr = do
+  exprContentHasType <- replResolveExprsExprContentTypes expr
+  typeContentIsType  <- replResolveExprsTypeContentTypes expr
+  replTypeCheck exprContentHasType typeContentIsType expr
+
 -- | Check that a top-level expression has a valid type.
 replTypeCheck
-  :: Map ContentName Type
+  :: Map ContentName Type -- ^ Map expression content-bindings to the type they _have_
+  -> Map ContentName Type -- ^ Map type content-bindings to the type they _are_
   -> Expr
   -> Repl Type
-replTypeCheck contentBindingTypes expr = do
+replTypeCheck exprContentHasType typeContentIsType expr = do
   typeCtx <- replTypeCtx
-  let typeCheckCtx = (topTypeCheckCtx typeCtx){_contentHasType = contentBindingTypes}
+  let typeCheckCtx = (topTypeCheckCtx typeCtx)
+        { _contentHasType = exprContentHasType
+        , _contentIsType  = typeContentIsType
+        }
   case exprType typeCheckCtx expr of
     Left err
       -> replError $ EContext (EMsg $ text "Type-checking top-level expression") $ err
@@ -358,12 +442,13 @@ replTypeCheck contentBindingTypes expr = do
 
 -- | Check that a type has a valid kind under some bindings.
 replKindCheck
-  :: Type
+  :: Map ContentName Kind
   -> BindCtx TyVar Kind
+  -> Type
   -> Repl Kind
-replKindCheck typ typeKinds = do
+replKindCheck contentBindingKinds typeKinds typ = do
   typeCtx <- replTypeCtx
-  case typeKind typeKinds typeCtx typ of
+  case typeKind typeKinds contentBindingKinds typeCtx typ of
     Left err
       -> replError $ EContext (EMsg $ text "Kind-checking top-level type") $ err
 
@@ -545,7 +630,7 @@ replStore expr typ kind = do
   (typeResult,typeHash) <- replStoreType typ
   (kindResult,kindHash) <- replStoreKind kind
   hasTypeRes <- replStoreExprHasType (exprHash,typeHash)
-  hasKindRes <- replStoreExprHasType (typeHash,kindHash)
+  hasKindRes <- replStoreTypeHasKind (typeHash,kindHash)
   pure $ ReplStoreResult
     { _exprHash = exprHash
     , _typeHash = typeHash
