@@ -80,7 +80,7 @@ lispyExprRepl
 lispyExprRepl codeStore =
   let typeCtx   = sharedTypeCtx
 
-      read :: Text -> Repl CommentedExpr
+      read :: Text -> Repl (ExprFor CommentedPhase)
       read txt = do
         -- TODO: Debug level
         {-
@@ -96,12 +96,12 @@ lispyExprRepl codeStore =
         replLog $ mconcat
           [ text "Parsed expression (with comments hidden):"
           , lineBreak
-          , indent1 . ppExpr . addComments . stripComments $ readExpr
+          , indent1 . ppExpr . stripComments $ readExpr
           , lineBreak
           ]
         pure readExpr
 
-      eval :: CommentedExpr -> Repl Expr
+      eval :: ExprFor CommentedPhase -> Repl Expr
       eval = \commentedExpr -> do
         -- Remove things for humans
         let expr = stripComments commentedExpr
@@ -237,17 +237,18 @@ lispyExprRepl codeStore =
    in mkSimpleRepl read eval ppResult ctx
 
    where
-     exprGrammar :: G.Grammar CommentedExpr
-     exprGrammar = top $ expr var (sub $ typ tyVar) tyVar
+     exprGrammar :: G.Grammar (ExprFor CommentedPhase)
+     exprGrammar = lispyExpr
+     --exprGrammar = top $ expr var (sub $ typ tyVar) tyVar
 
      ppKind    = fromMaybe mempty . pprint (toPrinter kind)
-     ppType    = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar)
-     ppPattern = fromMaybe mempty . pprint (toPrinter $ top $ pattern var tyVar) . addPatternComments
-     ppExpr    = fromMaybe mempty . pprint (toPrinter $ top $ expr var (sub $ typ tyVar) tyVar)
      ppVar     = fromMaybe mempty . pprint (toPrinter var)
      ppTyVar   = fromMaybe mempty . pprint (toPrinter tyVar)
+     ppType    = fromMaybe mempty . pprint (toPrinter $ lispyType)
+     ppPattern = fromMaybe mempty . pprint (toPrinter $ lispyPattern) . addPatternComments
+     ppExpr    = fromMaybe mempty . pprint (toPrinter $ lispyExpr)
 
-     ppResult :: Either (Error Expr Type Pattern TypeCtx) (CommentedExpr,Expr)
+     ppResult :: Either (Error Expr Type Pattern TypeCtx) (ExprFor CommentedPhase,Expr)
               -> Doc
      ppResult e = case e of
        Left err

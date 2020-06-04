@@ -136,7 +136,7 @@ typeCtxStateGivenReplTypeCtx
 typeCtxStateGivenReplTypeCtx typeCtx
   = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) $ typeCtx
   where
-    ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
+    ppType = fromMaybe mempty . pprint (toPrinter lispyType) . addTypeComments
 
 instance Document a => Document [a] where
   document []     = mempty

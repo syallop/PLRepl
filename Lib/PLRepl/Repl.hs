@@ -151,6 +151,7 @@ import PLGrammar
 import Control.Monad
 import Data.Foldable
 import Data.List (intercalate,intersperse)
+import Data.Maybe
 import Data.Map (Map)
 import Data.Set (Set)
 import Data.Text (Text)
@@ -347,8 +348,16 @@ replResolveExprContentTypeHashes
   :: Set ContentName
   -> Repl (Map ContentName Hash)
 replResolveExprContentTypeHashes =
-  fmap Map.fromList . mapM (\h -> do ty <- replLookupExprsType . contentName $ h
-                                     pure (h,ty)
+  fmap Map.fromList . mapM (\h -> do mTy <- replLookupExprsType . contentName $ h
+                                     case mTy of
+                                       Nothing
+                                         -> replError . EMsg . mconcat $
+                                              [ text "When resolving a set of expression ContentNames we failed to lookup a type for:"
+                                              , lineBreak
+                                              , string . show $ h
+                                              ]
+                                       Just ty
+                                         -> pure (h,ty)
                            )
                     . Set.toList
 
@@ -357,10 +366,19 @@ replResolveTypeContentTypes
   :: Set ContentName
   -> Repl (Map ContentName Type)
 replResolveTypeContentTypes =
-  fmap Map.fromList . mapM (\h -> do ty <- replLookupType . contentName $ h
-                                     pure (h,ty)
+  fmap Map.fromList . mapM (\h -> do mTy <- replLookupType . contentName $ h
+                                     case mTy of
+                                       Nothing
+                                         -> replError . EMsg . mconcat $
+                                              [ text "When resolving a set of type ContentNames we failed to lookup a type for:"
+                                              , lineBreak
+                                              , string . show $ h
+                                              ]
+                                       Just ty
+                                         -> pure (h,ty)
                            )
                     . Set.toList
+  --fmap Map.fromList . mapM (undefined :: ContentName -> Repl (ContentName, Type))
 
 -- | Resolve all type ContentNames to their kind hash.
 --
@@ -369,8 +387,16 @@ replResolveTypeContentKindHashes
   :: Set ContentName
   -> Repl (Map ContentName Hash)
 replResolveTypeContentKindHashes =
-  fmap Map.fromList . mapM (\h -> do ty <- replLookupTypesKind . contentName $ h
-                                     pure (h,ty)
+  fmap Map.fromList . mapM (\h -> do mKind <- replLookupTypesKind . contentName $ h
+                                     case mKind of
+                                       Nothing
+                                         -> replError . EMsg . mconcat $
+                                              [ text "When resolving a set of type ContentNames we failed to lookup a kind for:"
+                                              , lineBreak
+                                              , string . show $ h
+                                              ]
+                                       Just kind
+                                         -> pure (h,kind)
                            )
                     . Set.toList
 
@@ -382,10 +408,23 @@ replResolveTypeContentKindHashes =
 replResolveExprsExprContentTypes
   :: Expr
   -> Repl (Map ContentName Type)
-replResolveExprsExprContentTypes expr =
+replResolveExprsExprContentTypes expr = do
   replGatherExprsExprContentNames expr
     >>= replResolveExprContentTypeHashes
-    >>= mapM replLookupType
+    >>= mapM (\typeHash -> do mTy <- replLookupType typeHash
+                              case mTy of
+                                -- TODO: More context on the outer expression
+                                -- and the expression hash we're looking at
+                                -- would be helpful.
+                                Nothing
+                                  -> replError . EMsg . mconcat $
+                                       [ text "Inside an expression we found an expression hash with a type hash, however we failed to resolve that type hash to a type:"
+                                       , lineBreak
+                                       , string . show $ typeHash
+                                       ]
+                                Just ty
+                                  -> pure ty
+              )
 
 -- | Resolving checks every top-level referenced type:
 -- - Has an associated kind hash
@@ -398,7 +437,20 @@ replResolveTypesTypeContentKinds
 replResolveTypesTypeContentKinds typ =
   replGatherTypesTypeContentNames typ
     >>= replResolveTypeContentKindHashes
-    >>= mapM replLookupKind
+    >>= mapM (\kindHash -> do mKind <- replLookupKind kindHash
+                              case mKind of
+                                -- TODO: More context on the outer type
+                                -- and the type hash we're looking at
+                                -- would be helpful.
+                                Nothing
+                                  -> replError . EMsg . mconcat $
+                                       [ text "Inside a type we found an type hash with a kind hash, however we failed to resolve that kind hash to a kind:"
+                                       , lineBreak
+                                       , string . show $ kindHash
+                                       ]
+                                Just kind
+                                  -> pure kind
+             )
 
 -- | Resolving checks every top-level referenced type has an associated type and
 -- returns the associations.
@@ -505,12 +557,12 @@ replStoreExpr
   -> Repl (StoreResult Expr, Hash)
 replStoreExpr expr = do
   codeStore <- replCodeStore
-  mRes <- replIO $ storeExpr codeStore expr
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to store expression"
+  eRes <- replIO $ storeExpr codeStore expr
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to store expression") $ err
 
-    Just (codeStore', storeResult, hash)
+    Right (codeStore', storeResult, hash)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure (storeResult, hash)
 
@@ -528,12 +580,12 @@ replStoreType
   -> Repl (StoreResult Type, Hash)
 replStoreType typ = do
   codeStore <- replCodeStore
-  mRes <- replIO $ storeType codeStore typ
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to store type"
+  eRes <- replIO $ storeType codeStore typ
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to store type") $ err
 
-    Just (codeStore', storeResult, hash)
+    Right (codeStore', storeResult, hash)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure (storeResult, hash)
 
@@ -551,12 +603,12 @@ replStoreKind
   -> Repl (StoreResult Kind, Hash)
 replStoreKind kind = do
   codeStore <- replCodeStore
-  mRes <- replIO $ storeKind codeStore kind
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to store kind"
+  eRes <- replIO $ storeKind codeStore kind
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to store kind") $ err
 
-    Just (codeStore', storeResult, hash)
+    Right (codeStore', storeResult, hash)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure (storeResult, hash)
 
@@ -573,12 +625,12 @@ replStoreExprHasType
   -> Repl (StoreResult Hash)
 replStoreExprHasType (exprHash,typeHash) = do
   codeStore <- replCodeStore
-  mRes <- replIO $ storeExprHasType codeStore (exprHash, typeHash)
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to store expression-has-type relation"
+  eRes <- replIO $ storeExprHasType codeStore (exprHash, typeHash)
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to store expression-has-type relation") $ err
 
-    Just (codeStore', storeResult)
+    Right (codeStore', storeResult)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure storeResult
 
@@ -595,12 +647,12 @@ replStoreTypeHasKind
   -> Repl (StoreResult Hash)
 replStoreTypeHasKind (typeHash,kindHash) = do
   codeStore <- replCodeStore
-  mRes <- replIO $ storeTypeHasKind codeStore (typeHash, kindHash)
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to store type-has-kind relation"
+  eRes <- replIO $ storeTypeHasKind codeStore (typeHash, kindHash)
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to store type-has-kind relation") $ err
 
-    Just (codeStore', storeResult)
+    Right (codeStore', storeResult)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure storeResult
 
@@ -671,11 +723,26 @@ replLookup
   :: Hash
   -> Repl (Expr,Type,Kind)
 replLookup exprHash = do
-  expr     <- replLookupExpr      exprHash
-  typeHash <- replLookupExprsType exprHash
-  typ      <- replLookupType      typeHash
-  kindHash <- replLookupTypesKind typeHash
-  kind     <- replLookupKind      kindHash
+  let errCtx = EContext (EMsg . mconcat $ [ text "Looking up expression, type and kind associated with expression hash:"
+                                          , lineBreak
+                                          , string . show $ exprHash
+                                          ])
+
+  mExpr <- replLookupExpr exprHash
+  expr  <- maybe (replError . errCtx . EMsg . text $ "Failed to resolve expression hash to expression") pure mExpr
+
+  mTypeHash <- replLookupExprsType exprHash
+  typeHash  <- maybe (replError . errCtx . EMsg . text $ "Failed to resolve expression hash to it's type hash") pure mTypeHash
+
+  mTyp <- replLookupType typeHash
+  typ  <- maybe (replError . errCtx . EMsg . text $ "Failed to resolve type hash to it's type") pure mTyp
+
+  mKindHash <- replLookupTypesKind typeHash
+  kindHash  <- maybe (replError . errCtx . EMsg . text $ "Failed to resolve type hash to it's kind hash") pure mKindHash
+
+  mKind <- replLookupKind kindHash
+  kind  <- maybe (replError . errCtx . EMsg . text $ "Failed to resolve kind hash to it's kind") pure mKind
+
   pure (expr,typ,kind)
 
 -- | Lookup an expr by its Hash.
@@ -684,15 +751,15 @@ replLookup exprHash = do
 -- ContentBinding inside an expression.
 replLookupExpr
   :: Hash
-  -> Repl Expr
+  -> Repl (Maybe Expr)
 replLookupExpr exprHash = do
   codeStore <- replCodeStore
-  mRes <- replIO $ lookupExpr codeStore exprHash
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to lookup expr"
+  eRes <- replIO $ lookupExpr codeStore exprHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to lookup expr") $ err
 
-    Just (codeStore', expr)
+    Right (codeStore', expr)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure expr
 
@@ -701,15 +768,15 @@ replLookupExpr exprHash = do
 -- Hashes may be acquired from a prior replStoreType.
 replLookupType
   :: Hash
-  -> Repl Type
+  -> Repl (Maybe Type)
 replLookupType typeHash = do
   codeStore <- replCodeStore
-  mRes <- replIO $ lookupType codeStore typeHash
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to lookup type"
+  eRes <- replIO $ lookupType codeStore typeHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to lookup type") $ err
 
-    Just (codeStore', typ)
+    Right (codeStore', typ)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure typ
 
@@ -718,15 +785,15 @@ replLookupType typeHash = do
 -- Hashes may be acquired from a prior replStoreKind.
 replLookupKind
   :: Hash
-  -> Repl Kind
+  -> Repl (Maybe Kind)
 replLookupKind kindHash = do
   codeStore <- replCodeStore
-  mRes <- replIO $ lookupKind codeStore kindHash
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to lookup kind"
+  eRes <- replIO $ lookupKind codeStore kindHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to lookup kind") $ err
 
-    Just (codeStore', kind)
+    Right (codeStore', kind)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure kind
 
@@ -736,15 +803,15 @@ replLookupKind kindHash = do
 -- if the backing storage is not reliable.
 replLookupExprsType
   :: Hash
-  -> Repl Hash
+  -> Repl (Maybe Hash)
 replLookupExprsType exprHash = do
   codeStore <- replCodeStore
-  mRes <- replIO $ lookupExprType codeStore exprHash
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to lookup exprs type"
+  eRes <- replIO $ lookupExprType codeStore exprHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to lookup exprs type") $ err
 
-    Just (codeStore', typeHash)
+    Right (codeStore', typeHash)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure typeHash
 
@@ -754,15 +821,15 @@ replLookupExprsType exprHash = do
 -- if the backing storage is not reliable.
 replLookupTypesKind
   :: Hash
-  -> Repl Hash
+  -> Repl (Maybe Hash)
 replLookupTypesKind typeHash = do
   codeStore <- replCodeStore
-  mRes <- replIO $ lookupTypeKind codeStore typeHash
-  case mRes of
-    Nothing
-      -> replError $ EMsg $ text "Failed to lookup types kind"
+  eRes <- replIO $ lookupTypeKind codeStore typeHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Failed to lookup types kind") $ err
 
-    Just (codeStore', kindHash)
+    Right (codeStore', kindHash)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure kindHash
 

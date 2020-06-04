@@ -49,7 +49,7 @@ typeCtxText
 typeCtxText = editorText
 
 ppType :: Grammar TyVar -> Type -> Doc
-ppType tb = fromMaybe mempty . pprint (toPrinter (top $ typ tb)) . addTypeComments
+ppType tb = fromMaybe mempty . pprint (toPrinter lispyType) . addTypeComments
 
 ppRec :: Rec -> Doc
 ppRec r = PLPrinter.text $ case r of

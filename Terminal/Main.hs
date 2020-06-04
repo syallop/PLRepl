@@ -56,6 +56,7 @@ import PLLispy
 import PLLispy.Expr
 import PLLispy.Level
 import PL.Hash
+import PL.HashStore
 import PL.CodeStore
 import PL.TyVar
 import PL.Expr
@@ -259,11 +260,7 @@ handleEvent chan st ev = case ev of
       --   - on success => render the parse in the output widget and switch
       --     focus to the editor.
       Vty.KIns
-        -> do let txt             = editorText $ _editorState $ st
-              let ?eb             = var
-                  ?abs            = typ tyVar
-                  ?tb             = tyVar
-              let ppExpr          = fromMaybe mempty . pprint (toPrinter $ top $ expr var (sub $ typ tyVar) tyVar) . addComments
+        -> do let txt = editorText $ _editorState $ st
               (log,eRes) <- liftIO . (`step` txt) . _currentRepl $ st
               case eRes of
                 -- Some repl error
@@ -274,9 +271,9 @@ handleEvent chan st ev = case ev of
                   --   re-detecting the newlines.
                   -- - The printer should be passed the current width so it
                   --   wraps optimally.
-                  -> let ppType    = fromMaybe mempty . pprint (toPrinter $ sub $ typ tyVar) . addTypeComments
-                         ppPattern = fromMaybe mempty . pprint (toPrinter $ top $ pattern var tyVar) . addPatternComments
-                         ppExpr    = fromMaybe mempty . pprint (toPrinter $ top $ expr var (top $ typ tyVar) tyVar) . addComments
+                  -> let ppType    = fromMaybe mempty . pprint (toPrinter lispyType) . addTypeComments -- TODO: sub-type printing?
+                         ppPattern = fromMaybe mempty . pprint (toPrinter lispyPattern) . addPatternComments
+                         ppExpr    = fromMaybe mempty . pprint (toPrinter lispyExpr) . addComments
                          ppVar     = fromMaybe mempty . pprint (toPrinter var)
                          ppTyVar   = fromMaybe mempty . pprint (toPrinter tyVar)
                       in continue st{ _outputState  = newOutputState . Text.lines
@@ -478,22 +475,19 @@ main = run
 --
 -- TODO: Remove when Exprs gain a canonical storage format.
 instance Serialize Expr where
-  serialize expr = serialize $ addComments expr
-  deserialize bs = stripComments <$> deserialize bs
-instance Serialize CommentedExpr where
-  serialize expr = case pprint (toPrinter grammar) expr of
+  serialize expr = serialize (addComments expr :: ExprFor CommentedPhase)
+  deserialize bs = (stripComments :: ExprFor CommentedPhase -> Expr) <$> deserialize bs
+instance Serialize (ExprFor CommentedPhase) where
+  serialize expr = case pprint (toPrinter lispyExpr) expr of
     Nothing
       -> error "Failed to Serialize an expression via a pretty-printer"
 
     Just doc
       -> encodeUtf8 . PLPrinter.render $ doc
-    where
-      grammar :: G.Grammar CommentedExpr
-      grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
 
   -- TODO: It might be nice to be able to fail with a reason when serialization
   -- is unsuccessful.
-  deserialize bs = case PLParser.runParser (toParser grammar) $ decodeUtf8 bs of
+  deserialize bs = case PLParser.runParser (toParser lispyExpr) $ decodeUtf8 bs of
     PLParser.ParseFailure _expected _cursor
       -> Nothing
     PLParser.ParseSuccess expr cursor
@@ -506,25 +500,20 @@ instance Serialize CommentedExpr where
       noTrailingCharacters :: Text -> Bool
       noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
 
-      grammar :: G.Grammar CommentedExpr
-      grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
 instance Serialize Type where
-  serialize typ = serialize $ addTypeComments typ
-  deserialize bs = stripTypeComments <$> deserialize bs
-instance Serialize CommentedType where
-  serialize typ = case pprint (toPrinter grammar) typ of
+  serialize typ = serialize (addTypeComments typ :: TypeFor CommentedPhase)
+  deserialize bs = (stripTypeComments :: TypeFor CommentedPhase -> Type) <$> deserialize bs
+instance Serialize (TypeFor CommentedPhase) where
+  serialize typ = case pprint (toPrinter lispyType) typ of
     Nothing
       -> error "Failed to Serialize a type via a pretty-printer"
 
     Just doc
       -> encodeUtf8 . PLPrinter.render $ doc
-    where
-      grammar :: G.Grammar CommentedType
-      grammar = L.sub $ L.typ L.tyVar
 
   -- TODO: It might be nice to be able to fail with a reason when serialization
   -- is unsuccessful.
-  deserialize bs = case PLParser.runParser (toParser grammar) $ decodeUtf8 bs of
+  deserialize bs = case PLParser.runParser (toParser lispyType) $ decodeUtf8 bs of
     PLParser.ParseFailure _expected _cursor
       -> Nothing
     PLParser.ParseSuccess typ cursor
@@ -537,8 +526,6 @@ instance Serialize CommentedType where
       noTrailingCharacters :: Text -> Bool
       noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
 
-      grammar :: G.Grammar CommentedType
-      grammar = L.sub $ L.typ L.tyVar
 instance Serialize Kind where
   serialize kind = case pprint (toPrinter L.kind) kind of
     Nothing
@@ -582,39 +569,49 @@ codeStore = newCodeStore exprStore typeStore kindStore exprTypeStore typeKindSto
     typeKindStore = newNestedStore newEmptyMemoryStore typeKindFileStore
 
     exprFileStore :: FileStore Hash Expr
-    exprFileStore = newFileStore
-      (\exprHash -> keyFilePath ".pl/lispy/expr" (Just 32) exprHash <> "/reduced")
-      serialize
-      deserialize
-      (==)
+    exprFileStore = newSimpleFileStore
+      [".pl"
+      ,"lispy"
+      ,"expr"
+      ]
+      175
+      "reduced"
 
     typeFileStore :: FileStore Hash Type
-    typeFileStore = newFileStore
-      (\typeHash -> keyFilePath ".pl/lispy/type" (Just 32) typeHash <> "/reduced")
-      serialize
-      deserialize
-      (==)
+    typeFileStore = newSimpleFileStore
+      [".pl"
+      ,"lispy"
+      ,"type"
+      ]
+      32
+      "reduced"
 
     kindFileStore :: FileStore Hash Kind
-    kindFileStore = newFileStore
-      (\kindHash -> keyFilePath ".pl/lispy/kind" (Just 32) kindHash <> "/reduced")
-      serialize
-      deserialize
-      (==)
+    kindFileStore = newSimpleFileStore
+      [".pl"
+      ,"lispy"
+      ,"kind"
+      ]
+      32
+      "reduced"
 
     exprTypeFileStore :: FileStore Hash Hash
-    exprTypeFileStore = newFileStore
-      (\exprHash -> keyFilePath ".pl/lispy/expr" (Just 32) exprHash <> "/type")
-      serialize
-      deserialize
-      (==)
+    exprTypeFileStore = newSimpleFileStore
+      [".pl"
+      ,"lispy"
+      ,"expr"
+      ]
+      32
+      "type"
 
     typeKindFileStore :: FileStore Hash Hash
-    typeKindFileStore = newFileStore
-      (\typeHash -> keyFilePath ".pl/lispy/type" (Just 32) typeHash <> "/kind")
-      serialize
-      deserialize
-      (==)
+    typeKindFileStore = newSimpleFileStore
+      [".pl"
+      ,"lispy"
+      ,"type"
+      ]
+      32
+      "kind"
 
 run :: IO ()
 run = do
