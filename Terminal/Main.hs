@@ -80,6 +80,8 @@ import qualified PL.Test.ExprTestCase as Test
 import qualified PLLispy.Test.Sources.Expr as Test
 
 import PLGrammar
+import Reversible.Iso
+import Reversible
 
 import qualified PLParser as PLParser
 import qualified PLPrinter as PLPrinter
@@ -568,50 +570,79 @@ codeStore = newCodeStore exprStore typeStore kindStore exprTypeStore typeKindSto
     exprTypeStore = newNestedStore newEmptyMemoryStore exprTypeFileStore
     typeKindStore = newNestedStore newEmptyMemoryStore typeKindFileStore
 
+    hashGrammar :: Grammar Hash
+    hashGrammar = hashIso \$/ (alg \* charIs '/')
+                          \*/ hashTextBrokenAt32
+      where
+        hashIso :: Iso (HashAlgorithm, Text) Hash
+        hashIso = Iso
+          {_forwards  = \(alg,bytes) -> mkBase58 alg bytes
+          ,_backwards = Just . unBase58
+          }
+
+        alg :: Grammar HashAlgorithm
+        alg = sha512
+
+        sha512 :: Grammar HashAlgorithm
+        sha512 = (textIs "SHA512" \|/ textIs "sha512") */ rpure SHA512
+
+        hashTextBrokenAt32 :: Grammar Text
+        hashTextBrokenAt32 = iso \$/ (takeNWhen 32 isHashCharacter \* charIs '/')
+                                 \*/ (longestMatching isHashCharacter)
+          where
+            iso :: Iso (Text,Text) Text
+            iso = Iso
+              {_forwards  = \(prefix,suffix) -> Just $ prefix <> suffix
+              ,_backwards = Just . Text.splitAt 32
+              }
+
+        takeNWhen :: Int -> (Char -> Bool) -> Grammar Text
+        takeNWhen 0 _    = rpure ""
+        takeNWhen n pred = consIso \$/ charWhen pred \*/ takeNWhen (n-1) pred
+
+        consIso :: Iso (Char,Text) Text
+        consIso = Iso
+          { _forwards = \(c,t) -> Just . Text.cons c $ t
+          , _backwards = \t -> Text.uncons t
+          }
+
+        hashCharacter :: Grammar Char
+        hashCharacter = charWhen isHashCharacter
+
+        isHashCharacter :: Char -> Bool
+        isHashCharacter = (`elem` hashCharacters)
+
+        -- A slash used to separate the algorithm from a Base58 charset (deliberately excludes 0).
+        hashCharacters :: [Char]
+        hashCharacters = ['/'] <> ['1'..'9'] <> ['A'..'Z'] <> ['a'..'z']
+
+    mkFileStore :: (Eq a,Ord a,Serialize a) => Text -> Text -> FileStore Hash a
+    mkFileStore subdir file = FileStore
+      { _subDirectories =
+          [".pl"
+          ,"lispy"
+          , encodeUtf8 subdir
+          ]
+      , _filePattern          = hashGrammar \* textIs ("/" <> file)
+      , _serializeFileBytes   = serialize
+      , _deserializeFileBytes = deserialize
+      , _valuesEqual          = (==)
+      }
+
     exprFileStore :: FileStore Hash Expr
-    exprFileStore = newSimpleFileStore
-      [".pl"
-      ,"lispy"
-      ,"expr"
-      ]
-      175
-      "reduced"
+    exprFileStore = mkFileStore "expr" "reduced"
 
     typeFileStore :: FileStore Hash Type
-    typeFileStore = newSimpleFileStore
-      [".pl"
-      ,"lispy"
-      ,"type"
-      ]
-      32
-      "reduced"
+    typeFileStore = mkFileStore "type" "reduced"
 
     kindFileStore :: FileStore Hash Kind
-    kindFileStore = newSimpleFileStore
-      [".pl"
-      ,"lispy"
-      ,"kind"
-      ]
-      32
-      "reduced"
+    kindFileStore = mkFileStore "kind" "reduced"
 
     exprTypeFileStore :: FileStore Hash Hash
-    exprTypeFileStore = newSimpleFileStore
-      [".pl"
-      ,"lispy"
-      ,"expr"
-      ]
-      32
-      "type"
+    exprTypeFileStore = mkFileStore "expr" "type"
 
     typeKindFileStore :: FileStore Hash Hash
-    typeKindFileStore = newSimpleFileStore
-      [".pl"
-      ,"lispy"
-      ,"type"
-      ]
-      32
-      "kind"
+    typeKindFileStore = mkFileStore "type" "kind"
 
 run :: IO ()
 run = do
