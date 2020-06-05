@@ -2,6 +2,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-|
 Module      : PLRepl.Repl
 Copyright   : (c) Samuel A. Yallop, 2018
@@ -63,10 +64,13 @@ module PLRepl.Repl
   -- * Resolving
   --
   -- | Resolve names external to an AST that may be used during typechecking
+  --
   -- Ironically these function names themselves are bad.
   -- This is because the types arent specific enough to rule out misuse so care
   -- needs to be taken choosing the right function for the expected sort of
   -- contentname.
+
+  -- ** Resolve Hashes to their content/ things they relate to
   , replGatherExprsExprContentNames
   , replGatherExprsTypeContentNames
   , replGatherTypesTypeContentNames
@@ -77,6 +81,18 @@ module PLRepl.Repl
   , replResolveExprsExprContentTypes
   , replResolveTypesTypeContentKinds
   , replResolveExprsTypeContentTypes
+
+  -- ** Map between short and long hashes
+  , replResolveShortHashes
+  , replShortenHashes
+
+  , replResolveExprHash
+  , replResolveTypeHash
+  , replResolveKindHash
+
+  , replShortenExprHash
+  , replShortenTypeHash
+  , replShortenKindHash
 
   -- * Type checking
   --
@@ -126,7 +142,6 @@ module PLRepl.Repl
   where
 
 import PL.Binds
-import PL.CodeStore
 import PL.Error
 import PL.Evaluate
 import PL.Expr
@@ -137,11 +152,13 @@ import PL.Pattern
 import PL.Reduce
 import PL.ReduceType
 import PL.Store
+import PL.HashStore
 import PL.TyVar
 import PL.Type
 import PL.Type.Eq
 import PL.TypeCheck
 import PL.TypeCtx
+import PL.Resolve
 import qualified PL.CodeStore as CodeStore
 
 import qualified PLParser as PLParser
@@ -321,6 +338,8 @@ runRepl ctx r = _unRepl r ctx
 {- Definition API -}
 
 {-  Resolving -}
+
+-- TODO: A lot of logic here might belong in the Resolve phase.
 
 -- | Gather all top-level names that refer to external expressions.
 replGatherExprsExprContentNames
@@ -557,7 +576,7 @@ replStoreExpr
   -> Repl (StoreResult Expr, Hash)
 replStoreExpr expr = do
   codeStore <- replCodeStore
-  eRes <- replIO $ storeExpr codeStore expr
+  eRes <- replIO $ CodeStore.storeExpr codeStore expr
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to store expression") $ err
@@ -580,7 +599,7 @@ replStoreType
   -> Repl (StoreResult Type, Hash)
 replStoreType typ = do
   codeStore <- replCodeStore
-  eRes <- replIO $ storeType codeStore typ
+  eRes <- replIO $ CodeStore.storeType codeStore typ
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to store type") $ err
@@ -603,7 +622,7 @@ replStoreKind
   -> Repl (StoreResult Kind, Hash)
 replStoreKind kind = do
   codeStore <- replCodeStore
-  eRes <- replIO $ storeKind codeStore kind
+  eRes <- replIO $ CodeStore.storeKind codeStore kind
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to store kind") $ err
@@ -625,7 +644,7 @@ replStoreExprHasType
   -> Repl (StoreResult Hash)
 replStoreExprHasType (exprHash,typeHash) = do
   codeStore <- replCodeStore
-  eRes <- replIO $ storeExprHasType codeStore (exprHash, typeHash)
+  eRes <- replIO $ CodeStore.storeExprHasType codeStore (exprHash, typeHash)
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to store expression-has-type relation") $ err
@@ -647,7 +666,7 @@ replStoreTypeHasKind
   -> Repl (StoreResult Hash)
 replStoreTypeHasKind (typeHash,kindHash) = do
   codeStore <- replCodeStore
-  eRes <- replIO $ storeTypeHasKind codeStore (typeHash, kindHash)
+  eRes <- replIO $ CodeStore.storeTypeHasKind codeStore (typeHash, kindHash)
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to store type-has-kind relation") $ err
@@ -754,7 +773,7 @@ replLookupExpr
   -> Repl (Maybe Expr)
 replLookupExpr exprHash = do
   codeStore <- replCodeStore
-  eRes <- replIO $ lookupExpr codeStore exprHash
+  eRes <- replIO $ CodeStore.lookupExpr codeStore exprHash
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to lookup expr") $ err
@@ -771,7 +790,7 @@ replLookupType
   -> Repl (Maybe Type)
 replLookupType typeHash = do
   codeStore <- replCodeStore
-  eRes <- replIO $ lookupType codeStore typeHash
+  eRes <- replIO $ CodeStore.lookupType codeStore typeHash
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to lookup type") $ err
@@ -788,7 +807,7 @@ replLookupKind
   -> Repl (Maybe Kind)
 replLookupKind kindHash = do
   codeStore <- replCodeStore
-  eRes <- replIO $ lookupKind codeStore kindHash
+  eRes <- replIO $ CodeStore.lookupKind codeStore kindHash
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to lookup kind") $ err
@@ -806,7 +825,7 @@ replLookupExprsType
   -> Repl (Maybe Hash)
 replLookupExprsType exprHash = do
   codeStore <- replCodeStore
-  eRes <- replIO $ lookupExprType codeStore exprHash
+  eRes <- replIO $ CodeStore.lookupExprType codeStore exprHash
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to lookup exprs type") $ err
@@ -824,7 +843,7 @@ replLookupTypesKind
   -> Repl (Maybe Hash)
 replLookupTypesKind typeHash = do
   codeStore <- replCodeStore
-  eRes <- replIO $ lookupTypeKind codeStore typeHash
+  eRes <- replIO $ CodeStore.lookupTypeKind codeStore typeHash
   case eRes of
     Left err
       -> replError . EContext (EMsg $ text "Failed to lookup types kind") $ err
@@ -832,6 +851,158 @@ replLookupTypesKind typeHash = do
     Right (codeStore', kindHash)
       -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
             pure kindHash
+
+-- | Attempt to resolve all ShortHashes contained within an expression (it's
+-- patterns and it's types) into unambiguous ContentNames.
+replResolveShortHashes
+  :: ( ExprWithResolvedHashes unresolved resolved
+     , AbstractionFor unresolved ~ TypeFor typePhase
+     , AbstractionFor resolved   ~ TypeFor typePhase
+     )
+  => ExprFor unresolved
+  -> Repl (ExprFor resolved)
+replResolveShortHashes expr = do
+  -- TODO: Settle on concrete phases at this level.
+  codeStore <- replCodeStore
+  let resolveCtx = mkResolveCtx codeStore
+  eRes <- replIO . runResolve resolveCtx . resolveShortHashes $ expr
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Resolving short-hashes inside an expression") $ err
+
+    Right (resolveCtx', resolvedExpr)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
+            pure resolvedExpr
+
+-- | Attempt to resolve a ShortHash for an expression to an unambiguous Hash.
+--
+-- It is an error if:
+-- - There is no known larger Hash
+-- - There are multiple colliding Hashes
+replResolveExprHash
+  :: ShortHash
+  -> Repl Hash
+replResolveExprHash shortHash = do
+  codeStore <- replCodeStore
+  let resolveCtx = mkResolveCtx codeStore
+  eRes <- replIO . runResolve resolveCtx . resolveExprHash $ shortHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Resolving a short-hash to an expression hash") $ err
+
+    Right (resolveCtx', resolvedHash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
+            pure resolvedHash
+
+-- | Attempt to resolve a ShortHash for a type to an unambiguous Hash.
+--
+-- It is an error if:
+-- - There is no known larger Hash
+-- - There are multiple colliding Hashes
+replResolveTypeHash
+  :: ShortHash
+  -> Repl Hash
+replResolveTypeHash shortHash = do
+  codeStore <- replCodeStore
+  let resolveCtx = mkResolveCtx codeStore
+  eRes <- replIO . runResolve resolveCtx . resolveTypeHash $ shortHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Resolving a short-hash to a type hash") $ err
+
+    Right (resolveCtx', resolvedHash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
+            pure resolvedHash
+
+-- | Attempt to resolve a ShortHash for a kind to an unambiguous Hash.
+--
+-- It is an error if:
+-- - There is no known larger Hash
+-- - There are multiple colliding Hashes
+replResolveKindHash
+  :: ShortHash
+  -> Repl Hash
+replResolveKindHash shortHash = do
+  codeStore <- replCodeStore
+  let resolveCtx = mkResolveCtx codeStore
+  eRes <- replIO . runResolve resolveCtx . resolveKindHash $ shortHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Resolving a short-hash to a kind hash") $ err
+
+    Right (resolveCtx', resolvedHash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
+            pure resolvedHash
+
+
+-- | Attempt to shorten all Hashes contained within an expression (it's patterns
+-- and it's types) into the shortest unambiguous ShortHashes.
+replShortenHashes
+  :: ( ExprWithShortenedHashes long short
+     , AbstractionFor long ~ TypeFor typePhase
+     , AbstractionFor short ~ TypeFor typePhase
+     )
+  => ExprFor long
+  -> Repl (ExprFor short)
+replShortenHashes expr = do
+  codeStore <- replCodeStore
+  let resolveCtx = mkResolveCtx codeStore
+  eRes <- replIO . runResolve resolveCtx . shortenHashes $ expr
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Shortening hashes within an expression") $ err
+
+    Right (resolveCtx', shortenedExpr)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
+            pure shortenedExpr
+
+-- | Given an Expr Hash, shorten it to the shortest unambiguous ShortHash.
+replShortenExprHash
+  :: Hash
+  -> Repl ShortHash
+replShortenExprHash exprHash = do
+  codeStore <- replCodeStore
+  let resolveCtx = mkResolveCtx codeStore
+  eRes <- replIO . runResolve resolveCtx . shortenExprHash $ exprHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Shortening an expression hash") $ err
+
+    Right (resolveCtx', shortHash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
+            pure shortHash
+
+-- | Given an Type Hash, shorten it to the shortest unambiguous ShortHash.
+replShortenTypeHash
+  :: Hash
+  -> Repl ShortHash
+replShortenTypeHash typeHash = do
+  codeStore <- replCodeStore
+  let resolveCtx = mkResolveCtx codeStore
+  eRes <- replIO . runResolve resolveCtx . shortenTypeHash $ typeHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Shortening a type hash") $ err
+
+    Right (resolveCtx', shortHash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
+            pure shortHash
+
+-- | Given an Kind Hash, shorten it to the shortest unambiguous ShortHash.
+replShortenKindHash
+  :: Hash
+  -> Repl ShortHash
+replShortenKindHash kindHash = do
+  codeStore <- replCodeStore
+  let resolveCtx = mkResolveCtx codeStore
+  eRes <- replIO . runResolve resolveCtx . shortenKindHash $ kindHash
+  case eRes of
+    Left err
+      -> replError . EContext (EMsg $ text "Shortening a kind hash") $ err
+
+    Right (resolveCtx', shortHash)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
+            pure shortHash
 
 {-  Evaluation -}
 
