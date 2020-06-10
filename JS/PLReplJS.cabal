@@ -26,5 +26,6 @@ executable client
                      , PLParser
                      , PLPrinter
                      , PLGrammar
+                     , Reversible
 
   default-language:    Haskell2010

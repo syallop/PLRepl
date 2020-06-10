@@ -49,12 +49,16 @@ import PL.Hash
 import PL.HashStore
 import PL.TypeCtx
 import PL.CodeStore
+import PL.FixPhase
 import PL.Var
 import PL.TypeCheck
 import PL.Test.Shared
 
 import PLLispy
+import PLLispy.Name
 import PLLispy.Level
+
+import Reversible
 
 import qualified PLGrammar as G
 
@@ -136,7 +140,29 @@ typeCtxStateGivenReplTypeCtx
 typeCtxStateGivenReplTypeCtx typeCtx
   = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) $ typeCtx
   where
-    ppType = fromMaybe mempty . pprint (toPrinter lispyType) . addTypeComments
+    ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ typeDeps)
+
+    typeDeps :: TypeGrammarDependencies DefaultPhase
+    typeDeps = TypeGrammarDependencies
+      { _typeBindingFor        = tyVar
+      , _typeContentBindingFor = contentNameGrammar
+
+      , _namedGrammarExtension              = noExtG
+      , _arrowGrammarExtension              = noExtG
+      , _sumTGrammarExtension               = noExtG
+      , _productTGrammarExtension           = noExtG
+      , _unionTGrammarExtension             = noExtG
+      , _bigArrowGrammarExtension           = noExtG
+      , _typeLamGrammarExtension            = noExtG
+      , _typeAppGrammarExtension            = noExtG
+      , _typeBindingGrammarExtension        = noExtG
+      , _typeContentBindingGrammarExtension = noExtG
+
+      , _typeGrammarExtension = noExtG
+      }
+
+    noExtG :: G.Grammar NoExt
+    noExtG = rpure noExt
 
 instance Document a => Document [a] where
   document []     = mempty

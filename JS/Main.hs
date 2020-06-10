@@ -29,6 +29,7 @@ import PL.Type hiding (Type)
 import PL.TypeCtx
 import PL.Var
 import PL.TypeCheck
+import PL.FixPhase
 import PL.CodeStore
 import PL.Store
 import PL.Store.Nested
@@ -37,6 +38,9 @@ import PL.Store.Memory
 import PL.Hash
 import PL.HashStore
 import PL.Serialize
+
+import Reversible
+import Reversible.Iso
 
 import PLGrammar
 import PLLispy
@@ -98,7 +102,7 @@ data Event n
 
   | Read
   | Eval Text
-  | PrintFail (Error Expr Type Pattern TypeCtx) PLPrinter.Doc
+  | PrintFail Error PLPrinter.Doc
   | PrintSuccess (PLPrinter.Doc) SimpleRepl
 
 main :: IO ()
@@ -153,132 +157,63 @@ codeStore = newCodeStore exprStore typeStore kindStore exprTypeStore typeKindSto
     exprTypeStore = newNestedStore newEmptyMemoryStore exprTypeLocalStorageStore
     typeKindStore = newNestedStore newEmptyMemoryStore typeKindLocalStorageStore
 
-    exprLocalStorageStore :: LocalStorageStore Hash Expr
-    exprLocalStorageStore = newLocalStorageStore
-      (\exprHash -> qualifiedKeyName ".pl/lispy/expr" exprHash <> "/reduced")
+    hashGrammar :: Grammar Hash
+    hashGrammar = hashIso \$/ (alg \* charIs '/')
+                          \*/ hashTextBrokenAt32
+      where
+        hashIso :: Iso (HashAlgorithm, Text) Hash
+        hashIso = Iso
+          {_forwards  = \(alg,bytes) -> either (const Nothing) Just . mkBase58 alg $ bytes
+          ,_backwards = Just . unBase58
+          }
+
+        alg :: Grammar HashAlgorithm
+        alg = sha512
+
+        sha512 :: Grammar HashAlgorithm
+        sha512 = (textIs "SHA512" \|/ textIs "sha512") */ rpure SHA512
+
+        hashTextBrokenAt32 :: Grammar Text
+        hashTextBrokenAt32 = longestMatching isHashCharacter
+
+        hashCharacter :: Grammar Char
+        hashCharacter = charWhen isHashCharacter
+
+        isHashCharacter :: Char -> Bool
+        isHashCharacter = (`elem` hashCharacters)
+
+        -- Base58
+        hashCharacters :: [Char]
+        hashCharacters = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+    mkLocalStorageStore :: (Eq a,Ord a,Serialize a) => Text -> Text -> LocalStorageStore Hash a
+    mkLocalStorageStore subdir key = newLocalStorageStore
+      [".pl"
+      ,"lispy"
+      , subdir
+      ]
+
+      (hashGrammar \* (charIs '/' */ textIs key))
+
       serializeJSString
       deserializeJSString
+
       (==)
+
+    exprLocalStorageStore :: LocalStorageStore Hash Expr
+    exprLocalStorageStore = mkLocalStorageStore "expr" "reduced"
 
     typeLocalStorageStore :: LocalStorageStore Hash Type
-    typeLocalStorageStore = newLocalStorageStore
-      (\typeHash -> qualifiedKeyName ".pl/lispy/type" typeHash <> "/reduced")
-      serializeJSString
-      deserializeJSString
-      (==)
+    typeLocalStorageStore = mkLocalStorageStore "type" "reduced"
 
     kindLocalStorageStore :: LocalStorageStore Hash Kind
-    kindLocalStorageStore = newLocalStorageStore
-      (\kindHash -> qualifiedKeyName ".pl/lispy/kind"  kindHash <> "/reduced")
-      serializeJSString
-      deserializeJSString
-      (==)
+    kindLocalStorageStore = mkLocalStorageStore "kind" "reduced"
 
     exprTypeLocalStorageStore :: LocalStorageStore Hash Hash
-    exprTypeLocalStorageStore = newLocalStorageStore
-      (\exprHash -> qualifiedKeyName ".pl/lispy/expr" exprHash <> "/type")
-      serializeJSString
-      deserializeJSString
-      (==)
+    exprTypeLocalStorageStore = mkLocalStorageStore "expr" "type"
 
     typeKindLocalStorageStore :: LocalStorageStore Hash Hash
-    typeKindLocalStorageStore = newLocalStorageStore
-      (\typeHash -> qualifiedKeyName ".pl/lispy/type"  typeHash <> "/kind")
-      serializeJSString
-      deserializeJSString
-      (==)
-
--- Hijack the Lispy Parser/ Printer to define a missing serialize instance for
--- expressions to allow us to store and retrieve them from the filesystem.
---
--- Note that this means we cannot share filestores generated with this instance
--- with anything using a different orphan instance.
---
--- TODO: Remove when Exprs gain a canonical storage format.
-instance Serialize Expr where
-  serialize expr = serialize $ addComments expr
-  deserialize bs = stripComments <$> deserialize bs
-instance Serialize CommentedExpr where
-  serialize expr = case pprint (toPrinter grammar) expr of
-    Nothing
-      -> error "Failed to Serialize an expression via a pretty-printer"
-
-    Just doc
-      -> encodeUtf8 . PLPrinter.render $ doc
-    where
-      grammar :: G.Grammar CommentedExpr
-      grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
-
-  -- TODO: It might be nice to be able to fail with a reason when serialization
-  -- is unsuccessful.
-  deserialize bs = case PLParser.runParser (toParser grammar) $ decodeUtf8 bs of
-    PLParser.ParseFailure _expected _cursor
-      -> Nothing
-    PLParser.ParseSuccess expr cursor
-      | noTrailingCharacters $ PLParser.remainder cursor
-      -> Just expr
-
-      | otherwise
-      -> Nothing
-    where
-      noTrailingCharacters :: Text -> Bool
-      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
-
-      grammar :: G.Grammar CommentedExpr
-      grammar = L.top $ L.expr L.var (L.sub $ L.typ L.tyVar) L.tyVar
-instance Serialize Type where
-  serialize typ = serialize $ addTypeComments typ
-  deserialize bs = stripTypeComments <$> deserialize bs
-instance Serialize CommentedType where
-  serialize typ = case pprint (toPrinter grammar) typ of
-    Nothing
-      -> error "Failed to Serialize a type via a pretty-printer"
-
-    Just doc
-      -> encodeUtf8 . PLPrinter.render $ doc
-    where
-      grammar :: G.Grammar CommentedType
-      grammar = L.sub $ L.typ L.tyVar
-
-  -- TODO: It might be nice to be able to fail with a reason when serialization
-  -- is unsuccessful.
-  deserialize bs = case PLParser.runParser (toParser grammar) $ decodeUtf8 bs of
-    PLParser.ParseFailure _expected _cursor
-      -> Nothing
-    PLParser.ParseSuccess typ cursor
-      | noTrailingCharacters $ PLParser.remainder cursor
-      -> Just typ
-
-      | otherwise
-      -> Nothing
-    where
-      noTrailingCharacters :: Text -> Bool
-      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
-
-      grammar :: G.Grammar CommentedType
-      grammar = L.sub $ L.typ L.tyVar
-instance Serialize Kind where
-  serialize kind = case pprint (toPrinter L.kind) kind of
-    Nothing
-      -> error "Failed to Serialize a kind via a pretty-printer"
-
-    Just doc
-      -> encodeUtf8 . PLPrinter.render $ doc
-
-  -- TODO: It might be nice to be able to fail with a reason when serialization
-  -- is unsuccessful.
-  deserialize bs = case PLParser.runParser (toParser L.kind) $ decodeUtf8 bs of
-    PLParser.ParseFailure _expected _cursor
-      -> Nothing
-    PLParser.ParseSuccess kind cursor
-      | noTrailingCharacters $ PLParser.remainder cursor
-      -> Just kind
-
-      | otherwise
-      -> Nothing
-    where
-      noTrailingCharacters :: Text -> Bool
-      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
+    typeKindLocalStorageStore = mkLocalStorageStore "type" "kind"
 
 -- | Transform the state in response to an event with optional side effects.
 handleEvent :: Event Name -> State Name -> Effect (Event Name) (State Name)
@@ -313,19 +248,14 @@ handleEvent ev (State st) = case ev of
 
   -- Failed to evaluate text
   PrintFail err log
-    -> let ppType    = fromMaybe mempty . pprint (toPrinter $ sub $ typ tyVar) . addTypeComments
-           ppPattern = fromMaybe mempty . pprint (toPrinter $ top $ pattern var tyVar) . addPatternComments
-           ppExpr    = fromMaybe mempty . pprint (toPrinter $ top $ expr var (top $ typ tyVar) tyVar) . addComments
-           ppVar     = fromMaybe mempty . pprint (toPrinter var)
-           ppTyVar   = fromMaybe mempty . pprint (toPrinter tyVar)
-        in noEff $ State st{ PL._outputState  = PL.newOutputState . Text.lines
-                                                                  . PLPrinter.render
-                                                                  . mconcat $
-                                                                      [ lineBreak
-                                                                      , log
-                                                                      , lineBreak
-                                                                      , ppError ppPattern ppType ppExpr (ppTypeCtx document (ppTypeInfo ppType)) ppVar ppTyVar $ err
-                                                                      ]
+    -> noEff $ State st{ PL._outputState  = PL.newOutputState . Text.lines
+                                                              . PLPrinter.render
+                                                              . mconcat $
+                                                                  [ lineBreak
+                                                                  , log
+                                                                  , lineBreak
+                                                                  , ppError ppDefaultError $ err
+                                                                  ]
                            , PL._focusOn      = Just OutputCursor
                            }
 
@@ -447,8 +377,7 @@ drawUI (State st) = div_
     -> TypeCtx
     -> View (Event Name)
   drawTypeCtx _typCtxCursor typeCtx =
-    let ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ tyVar) . addTypeComments
-        txt = (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) $ typeCtx
+     let txt = (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) $ typeCtx
      in div_
           [ id_ "type-ctx"
           ]

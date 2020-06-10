@@ -66,6 +66,6 @@ let
 in
 {
   PLReplJS = pkgs.haskell.packages.ghcjs.callCabal2nix "PLReplJS" (srcFilter ./.) {
-    inherit PL PLRepl PLLispy PLEditor PLPrinter PLParser PLGrammar filepath-bytestring;
+    inherit PL PLRepl PLLispy PLEditor PLPrinter PLParser PLGrammar Reversible filepath-bytestring;
   };
 }

@@ -154,6 +154,7 @@ import PL.ReduceType
 import PL.Store
 import PL.HashStore
 import PL.TyVar
+import PL.FixPhase
 import PL.Type
 import PL.Type.Eq
 import PL.TypeCheck
@@ -181,7 +182,7 @@ import qualified Data.Set as Set
 -- More complex interaction could be built directly with Repl.
 data SimpleRepl = forall read eval. SimpleRepl
   { _readEval    :: Text -> Repl (read,eval)
-  , _prettyPrint :: Either (Error Expr Type Pattern TypeCtx) (read,eval) -> Doc
+  , _prettyPrint :: Either Error (read,eval) -> Doc
   , _ctx         :: ReplCtx
   }
 
@@ -190,7 +191,7 @@ data SimpleRepl = forall read eval. SimpleRepl
 mkSimpleRepl
   :: (Text -> Repl read)
   -> (read -> Repl eval)
-  -> (Either (Error Expr Type Pattern TypeCtx) (read,eval) -> Doc)
+  -> (Either Error (read,eval) -> Doc)
   -> ReplCtx
   -> SimpleRepl
 mkSimpleRepl read eval pprint ctx = SimpleRepl
@@ -218,7 +219,7 @@ simpleReplCtx (SimpleRepl _ _ ctx) = ctx
 step
   :: SimpleRepl
   -> Text
-  -> IO (Doc, Either (Error Expr Type Pattern TypeCtx) SimpleRepl)
+  -> IO (Doc, Either Error SimpleRepl)
 step (SimpleRepl readEval print ctx) txt = do
   (ctx',log,res) <- runRepl ctx $ readEval txt
   case res of
@@ -258,7 +259,7 @@ newtype Repl a = Repl
   {_unRepl :: ReplCtx
            -> IO ( ReplCtx
                  , Doc
-                 , Either (Error Expr Type Pattern TypeCtx)
+                 , Either Error
                            a
                  )
   }
@@ -288,7 +289,7 @@ instance Monad Repl where
 
 -- | Inject an error into the repl
 replError
-  :: Error Expr Type Pattern TypeCtx
+  :: Error
   -> Repl x
 replError err = Repl $ \st -> pure (st, mempty, Left err)
 
@@ -330,7 +331,7 @@ runRepl
   -> Repl a
   -> IO ( ReplCtx
         , Doc
-        , Either (Error Expr Type Pattern TypeCtx)
+        , Either Error
                  a
         )
 runRepl ctx r = _unRepl r ctx
@@ -343,19 +344,24 @@ runRepl ctx r = _unRepl r ctx
 
 -- | Gather all top-level names that refer to external expressions.
 replGatherExprsExprContentNames
-  :: Expr
+  :: ContentName ~ ContentBindingFor phase
+  => ExprFor phase
   -> Repl (Set ContentName)
 replGatherExprsExprContentNames = pure . gatherContentNames
 
 -- | Gather all top-level names that refer to external types.
 replGatherExprsTypeContentNames
-  :: Expr
+  :: ( TypeFor phase ~ AbstractionFor phase
+     , ContentName   ~ TypeContentBindingFor phase
+     )
+  => ExprFor phase
   -> Repl (Set ContentName)
 replGatherExprsTypeContentNames = pure . gatherExprsTypeContentNames
 
 -- | Gather all top-level names that refer to external types.
 replGatherTypesTypeContentNames
-  :: Type
+  :: ContentName ~ TypeContentBindingFor phase
+  => TypeFor phase
   -> Repl (Set ContentName)
 replGatherTypesTypeContentNames = pure . gatherTypeContentNames
 
@@ -397,7 +403,6 @@ replResolveTypeContentTypes =
                                          -> pure (h,ty)
                            )
                     . Set.toList
-  --fmap Map.fromList . mapM (undefined :: ContentName -> Repl (ContentName, Type))
 
 -- | Resolve all type ContentNames to their kind hash.
 --
@@ -856,8 +861,8 @@ replLookupTypesKind typeHash = do
 -- patterns and it's types) into unambiguous ContentNames.
 replResolveShortHashes
   :: ( ExprWithResolvedHashes unresolved resolved
-     , AbstractionFor unresolved ~ TypeFor typePhase
-     , AbstractionFor resolved   ~ TypeFor typePhase
+     , AbstractionFor unresolved ~ TypeFor unresolved
+     , AbstractionFor resolved   ~ TypeFor resolved
      )
   => ExprFor unresolved
   -> Repl (ExprFor resolved)

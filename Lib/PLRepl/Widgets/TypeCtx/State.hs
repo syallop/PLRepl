@@ -14,11 +14,14 @@ import PLRepl.Widgets.Editor.State
 
 import PL.Error
 import PL.Kind
+import PL.Expr
 import PL.Commented
 import PL.Name
 import PL.Type
 import PL.TypeCtx
 import PL.TyVar
+import PL.FixPhase
+import Reversible
 
 import qualified PLEditor as E
 import qualified PLPrinter
@@ -26,6 +29,7 @@ import PLGrammar
 import PLPrinter (Doc, document, pprint)
 import PLPrinter.Doc
 import PLLispy
+import PLLispy.Name
 import PLLispy.Level
 
 import qualified Data.Map as Map
@@ -49,7 +53,27 @@ typeCtxText
 typeCtxText = editorText
 
 ppType :: Grammar TyVar -> Type -> Doc
-ppType tb = fromMaybe mempty . pprint (toPrinter lispyType) . addTypeComments
+ppType tb = fromMaybe mempty . pprint (toPrinter $ top $ typ typeDeps)
+
+typeDeps :: TypeGrammarDependencies DefaultPhase
+typeDeps = TypeGrammarDependencies
+  { _typeBindingFor        = tyVar
+  , _typeContentBindingFor = contentNameGrammar
+
+  , _namedGrammarExtension              = noExtG
+  , _arrowGrammarExtension              = noExtG
+  , _sumTGrammarExtension               = noExtG
+  , _productTGrammarExtension           = noExtG
+  , _unionTGrammarExtension             = noExtG
+  , _bigArrowGrammarExtension           = noExtG
+  , _typeLamGrammarExtension            = noExtG
+  , _typeAppGrammarExtension            = noExtG
+  , _typeBindingGrammarExtension        = noExtG
+  , _typeContentBindingGrammarExtension = noExtG
+
+  , _typeGrammarExtension = noExtG
+  }
+
 
 ppRec :: Rec -> Doc
 ppRec r = PLPrinter.text $ case r of
@@ -62,4 +86,7 @@ ppKind k = case k of
     -> PLPrinter.text "KIND"
   KindArrow from to
     -> PLPrinter.char '^' <> parens (ppKind from) <> parens (ppKind to)
+
+noExtG :: Grammar NoExt
+noExtG = rpure noExt
 

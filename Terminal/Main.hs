@@ -98,7 +98,7 @@ import Brick.BChan
 import Brick.Widgets.Border
 import Brick.Widgets.Border.Style
 import Brick.Widgets.Center
-import Graphics.Vty as Vty
+import qualified Graphics.Vty as Vty
 import qualified Brick as Brick
 
 import Control.Concurrent (threadDelay, forkIO, forkFinally)
@@ -273,21 +273,16 @@ handleEvent chan st ev = case ev of
                   --   re-detecting the newlines.
                   -- - The printer should be passed the current width so it
                   --   wraps optimally.
-                  -> let ppType    = fromMaybe mempty . pprint (toPrinter lispyType) . addTypeComments -- TODO: sub-type printing?
-                         ppPattern = fromMaybe mempty . pprint (toPrinter lispyPattern) . addPatternComments
-                         ppExpr    = fromMaybe mempty . pprint (toPrinter lispyExpr) . addComments
-                         ppVar     = fromMaybe mempty . pprint (toPrinter var)
-                         ppTyVar   = fromMaybe mempty . pprint (toPrinter tyVar)
-                      in continue st{ _outputState  = newOutputState . Text.lines
-                                                                     . PLPrinter.render
-                                                                     . mconcat $
-                                                                         [ lineBreak
-                                                                         , log
-                                                                         , lineBreak
-                                                                         , ppError ppPattern ppType ppExpr (ppTypeCtx document (ppTypeInfo ppType)) ppVar ppTyVar $ err
-                                                                         ]
-                                    , _focusOn      = Just OutputCursor
-                                    }
+                  -> continue st{ _outputState  = newOutputState . Text.lines
+                                                                 . PLPrinter.render
+                                                                 . mconcat $
+                                                                     [ lineBreak
+                                                                     , log
+                                                                     , lineBreak
+                                                                     , ppError ppDefaultError $ err
+                                                                     ]
+                                , _focusOn      = Just OutputCursor
+                                }
 
                 -- A successful parse
                 Right replacementRepl
@@ -336,7 +331,7 @@ eventDestination focusOn = case focusOn of
 
 -- | Named attributes describing reusable layout and drawing properties.
 attributes :: AttrMap
-attributes = attrMap defAttr []
+attributes = attrMap Vty.defAttr []
 
 -- | Convert the state to a list of widgets that may be drawn.
 -- Something like:
@@ -465,91 +460,8 @@ drawUI st =
       ) . E.viewEditor view
         $ editor
 
-
 main :: IO ()
 main = run
-
--- Hijack the Lispy Parser/ Printer to define a missing serialize instance for
--- expressions to allow us to store and retrieve them from the filesystem.
---
--- Note that this means we cannot share filestores generated with this instance
--- with anything using a different orphan instance.
---
--- TODO: Remove when Exprs gain a canonical storage format.
-instance Serialize Expr where
-  serialize expr = serialize (addComments expr :: ExprFor CommentedPhase)
-  deserialize bs = (stripComments :: ExprFor CommentedPhase -> Expr) <$> deserialize bs
-instance Serialize (ExprFor CommentedPhase) where
-  serialize expr = case pprint (toPrinter lispyExpr) expr of
-    Nothing
-      -> error "Failed to Serialize an expression via a pretty-printer"
-
-    Just doc
-      -> encodeUtf8 . PLPrinter.render $ doc
-
-  -- TODO: It might be nice to be able to fail with a reason when serialization
-  -- is unsuccessful.
-  deserialize bs = case PLParser.runParser (toParser lispyExpr) $ decodeUtf8 bs of
-    PLParser.ParseFailure _expected _cursor
-      -> Nothing
-    PLParser.ParseSuccess expr cursor
-      | noTrailingCharacters $ PLParser.remainder cursor
-      -> Just expr
-
-      | otherwise
-      -> Nothing
-    where
-      noTrailingCharacters :: Text -> Bool
-      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
-
-instance Serialize Type where
-  serialize typ = serialize (addTypeComments typ :: TypeFor CommentedPhase)
-  deserialize bs = (stripTypeComments :: TypeFor CommentedPhase -> Type) <$> deserialize bs
-instance Serialize (TypeFor CommentedPhase) where
-  serialize typ = case pprint (toPrinter lispyType) typ of
-    Nothing
-      -> error "Failed to Serialize a type via a pretty-printer"
-
-    Just doc
-      -> encodeUtf8 . PLPrinter.render $ doc
-
-  -- TODO: It might be nice to be able to fail with a reason when serialization
-  -- is unsuccessful.
-  deserialize bs = case PLParser.runParser (toParser lispyType) $ decodeUtf8 bs of
-    PLParser.ParseFailure _expected _cursor
-      -> Nothing
-    PLParser.ParseSuccess typ cursor
-      | noTrailingCharacters $ PLParser.remainder cursor
-      -> Just typ
-
-      | otherwise
-      -> Nothing
-    where
-      noTrailingCharacters :: Text -> Bool
-      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
-
-instance Serialize Kind where
-  serialize kind = case pprint (toPrinter L.kind) kind of
-    Nothing
-      -> error "Failed to Serialize a kind via a pretty-printer"
-
-    Just doc
-      -> encodeUtf8 . PLPrinter.render $ doc
-
-  -- TODO: It might be nice to be able to fail with a reason when serialization
-  -- is unsuccessful.
-  deserialize bs = case PLParser.runParser (toParser L.kind) $ decodeUtf8 bs of
-    PLParser.ParseFailure _expected _cursor
-      -> Nothing
-    PLParser.ParseSuccess kind cursor
-      | noTrailingCharacters $ PLParser.remainder cursor
-      -> Just kind
-
-      | otherwise
-      -> Nothing
-    where
-      noTrailingCharacters :: Text -> Bool
-      noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
 
 -- Backing storage is a memory cache over the filesystem. We use this to back
 -- a HashStore for expressions, allowing them to be persisted across
@@ -576,7 +488,7 @@ codeStore = newCodeStore exprStore typeStore kindStore exprTypeStore typeKindSto
       where
         hashIso :: Iso (HashAlgorithm, Text) Hash
         hashIso = Iso
-          {_forwards  = \(alg,bytes) -> mkBase58 alg bytes
+          {_forwards  = \(alg,bytes) -> either (const Nothing) Just . mkBase58 alg $ bytes
           ,_backwards = Just . unBase58
           }
 
@@ -587,8 +499,8 @@ codeStore = newCodeStore exprStore typeStore kindStore exprTypeStore typeKindSto
         sha512 = (textIs "SHA512" \|/ textIs "sha512") */ rpure SHA512
 
         hashTextBrokenAt32 :: Grammar Text
-        hashTextBrokenAt32 = iso \$/ (takeNWhen 32 isHashCharacter \* charIs '/')
-                                 \*/ (longestMatching isHashCharacter)
+        hashTextBrokenAt32 = iso \$/ (takeNWhen 32 isHashCharacter)
+                                 \*/ (charIs '/' */ longestMatching isHashCharacter)
           where
             iso :: Iso (Text,Text) Text
             iso = Iso
@@ -612,9 +524,9 @@ codeStore = newCodeStore exprStore typeStore kindStore exprTypeStore typeKindSto
         isHashCharacter :: Char -> Bool
         isHashCharacter = (`elem` hashCharacters)
 
-        -- A slash used to separate the algorithm from a Base58 charset (deliberately excludes 0).
+        -- Base58
         hashCharacters :: [Char]
-        hashCharacters = ['/'] <> ['1'..'9'] <> ['A'..'Z'] <> ['a'..'z']
+        hashCharacters = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
     mkFileStore :: (Eq a,Ord a,Serialize a) => Text -> Text -> FileStore Hash a
     mkFileStore subdir file = FileStore
@@ -623,7 +535,7 @@ codeStore = newCodeStore exprStore typeStore kindStore exprTypeStore typeKindSto
           ,"lispy"
           , encodeUtf8 subdir
           ]
-      , _filePattern          = hashGrammar \* textIs ("/" <> file)
+      , _filePattern          = hashGrammar \* (charIs '/' */ textIs file)
       , _serializeFileBytes   = serialize
       , _deserializeFileBytes = deserialize
       , _valuesEqual          = (==)
@@ -655,7 +567,7 @@ run = do
   --   - Pasting small lines. Ideally paste events would be handled as one event
   --     rather than as an event to insert each individual character.
   evChan <- newBChan 1024
-  void $ customMain (Vty.mkVty defaultConfig) (Just evChan) (replApp evChan) (initialState (Just EditorCursor) usage codeStore)
+  void $ customMain (Vty.mkVty Vty.defaultConfig) (Just evChan) (replApp evChan) (initialState (Just EditorCursor) usage codeStore)
 
 usage :: [Text]
 usage =
