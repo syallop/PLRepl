@@ -321,6 +321,51 @@ replModifyCtx
   -> Repl ()
 replModifyCtx f = Repl $ \ctx -> pure (f ctx, mempty, Right ())
 
+{- Internal convenience functions -}
+
+-- Lift a function on the CodeStore into the Repl.
+withCodeStore
+  :: CodeStore.CodeStoreFunction a
+  -> Repl a
+withCodeStore f = do
+  codeStore <- replCodeStore
+  eRes <- replIO . CodeStore.runCodeStoreFunction codeStore $ f
+  case eRes of
+    Left err
+      -> replError err
+
+    Right (codeStore', a)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
+            pure a
+
+withResolve
+  :: Resolve a
+  -> Repl a
+withResolve f = do
+  codeStore <- replCodeStore
+  let resolveCtx = mkResolveCtx codeStore
+  eRes <- replIO . runResolve resolveCtx $ f
+  case eRes of
+    Left err
+      -> replError err
+
+    Right (resolveCtx', a)
+      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx'})
+            pure a
+
+-- If a Repl computation fails, tag it with an error context
+withContext
+  :: Error
+  -> Repl a
+  -> Repl a
+withContext errCtx (Repl f) = Repl $ \ctx -> do
+  (ctx', log, eRes) <- f ctx
+  case eRes of
+    Left err
+      -> pure (ctx', log, Left . EContext errCtx $ err)
+
+    Right a
+      -> pure (ctx', log, Right a)
 
 {- Consumption API -}
 
@@ -578,17 +623,11 @@ replReduceType typ = do
 -- Failures are indicated in the underlying Error type.
 replStoreExpr
   :: Expr
-  -> Repl (StoreResult Expr, Hash)
-replStoreExpr expr = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.storeExpr codeStore expr
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to store expression") $ err
-
-    Right (codeStore', storeResult, hash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure (storeResult, hash)
+  -> Repl (HashStoreResult Expr)
+replStoreExpr
+  = withContext (EMsg . text $ "Failed to store expression")
+  . withCodeStore
+  . CodeStore.storeExpr
 
 -- | Store a type by it's hash.
 --
@@ -601,17 +640,11 @@ replStoreExpr expr = do
 -- Failures are indicated in the underlying Error type.
 replStoreType
   :: Type
-  -> Repl (StoreResult Type, Hash)
-replStoreType typ = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.storeType codeStore typ
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to store type") $ err
-
-    Right (codeStore', storeResult, hash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure (storeResult, hash)
+  -> Repl (HashStoreResult Type)
+replStoreType
+  = withContext (EMsg . text $ "Failed to store type")
+  . withCodeStore
+  . CodeStore.storeType
 
 -- | Store a kind by it's hash.
 --
@@ -624,17 +657,11 @@ replStoreType typ = do
 -- Failures are indicated in the underlying Error type.
 replStoreKind
   :: Kind
-  -> Repl (StoreResult Kind, Hash)
-replStoreKind kind = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.storeKind codeStore kind
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to store kind") $ err
-
-    Right (codeStore', storeResult, hash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure (storeResult, hash)
+  -> Repl (HashStoreResult Kind)
+replStoreKind
+  = withContext (EMsg . text $ "Failed to store kind")
+  . withCodeStore
+  . CodeStore.storeKind
 
 -- | Store a promise that an expression referred to by a hash has a type given
 -- by a hash.
@@ -645,18 +672,14 @@ replStoreKind kind = do
 --
 -- Failures are indicated in the underlying Error type.
 replStoreExprHasType
-  :: (Hash, Hash)
+  :: Hash
+  -> Hash
   -> Repl (StoreResult Hash)
-replStoreExprHasType (exprHash,typeHash) = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.storeExprHasType codeStore (exprHash, typeHash)
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to store expression-has-type relation") $ err
-
-    Right (codeStore', storeResult)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure storeResult
+replStoreExprHasType exprHash typeHash
+  = withContext (EMsg . text $ "Failed to store expression-has-type-relation")
+  . withCodeStore
+  . CodeStore.storeExprHasType exprHash
+  $ typeHash
 
 -- | Store a promise that a type referred to by a hash has a kind given
 -- by a hash.
@@ -667,18 +690,14 @@ replStoreExprHasType (exprHash,typeHash) = do
 --
 -- Failures are indicated in the underlying Error type.
 replStoreTypeHasKind
-  :: (Hash, Hash)
+  :: Hash
+  -> Hash
   -> Repl (StoreResult Hash)
-replStoreTypeHasKind (typeHash,kindHash) = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.storeTypeHasKind codeStore (typeHash, kindHash)
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to store type-has-kind relation") $ err
-
-    Right (codeStore', storeResult)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure storeResult
+replStoreTypeHasKind typeHash kindHash
+  = withContext (EMsg . text $ "Failed to store type-hash-kind relation")
+  . withCodeStore
+  . CodeStore.storeTypeHasKind typeHash
+  $ kindHash
 
 -- | Store a typed expression means to:
 -- - Store the expression
@@ -702,17 +721,17 @@ replStore
   -> Kind
   -> Repl ReplStoreResult
 replStore expr typ kind = do
-  (exprResult,exprHash) <- replStoreExpr expr
-  (typeResult,typeHash) <- replStoreType typ
-  (kindResult,kindHash) <- replStoreKind kind
-  hasTypeRes <- replStoreExprHasType (exprHash,typeHash)
-  hasKindRes <- replStoreTypeHasKind (typeHash,kindHash)
-  pure $ ReplStoreResult
-    { _exprHash = exprHash
-    , _typeHash = typeHash
-    , _kindHash = kindHash
+  exprResult <- replStoreExpr expr
+  typeResult <- replStoreType typ
+  kindResult <- replStoreKind kind
+  let exprHash = _storedAgainstHash exprResult
+      typeHash = _storedAgainstHash typeResult
+      kindHash = _storedAgainstHash kindResult
 
-    , _exprResult = exprResult
+  hasTypeRes <- replStoreExprHasType exprHash typeHash
+  hasKindRes <- replStoreTypeHasKind typeHash kindHash
+  pure $ ReplStoreResult
+    { _exprResult = exprResult
     , _typeResult = typeResult
     , _kindResult = kindResult
     , _exprHasTypeResult = hasTypeRes
@@ -725,13 +744,9 @@ replStore expr typ kind = do
 -- - The success result of storing each {expr,type,Kind} (I.E. whether an old value was replaced).
 -- - The success result of storing the expr-has-type and type-has-kind relation (I.E. whether an old relation was replaced).
 data ReplStoreResult = ReplStoreResult
-  { _exprHash :: Hash
-  , _typeHash :: Hash
-  , _kindHash :: Hash
-
-  , _exprResult :: StoreResult Expr
-  , _typeResult :: StoreResult Type
-  , _kindResult :: StoreResult Kind
+  { _exprResult :: HashStoreResult Expr
+  , _typeResult :: HashStoreResult Type
+  , _kindResult :: HashStoreResult Kind
   , _exprHasTypeResult :: StoreResult Hash
   , _typeHasKindResult :: StoreResult Hash
   }
@@ -776,16 +791,10 @@ replLookup exprHash = do
 replLookupExpr
   :: Hash
   -> Repl (Maybe Expr)
-replLookupExpr exprHash = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.lookupExpr codeStore exprHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to lookup expr") $ err
-
-    Right (codeStore', expr)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure expr
+replLookupExpr
+  = withContext (EMsg . text $ "Failed to lookup expr")
+  . withCodeStore
+  . CodeStore.lookupExpr
 
 -- | Lookup a type by its Hash.
 --
@@ -793,16 +802,10 @@ replLookupExpr exprHash = do
 replLookupType
   :: Hash
   -> Repl (Maybe Type)
-replLookupType typeHash = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.lookupType codeStore typeHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to lookup type") $ err
-
-    Right (codeStore', typ)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure typ
+replLookupType
+  = withContext (EMsg . text $ "Failed to lookup type")
+  . withCodeStore
+  . CodeStore.lookupType
 
 -- | Lookup a kind by its Hash.
 --
@@ -810,16 +813,10 @@ replLookupType typeHash = do
 replLookupKind
   :: Hash
   -> Repl (Maybe Kind)
-replLookupKind kindHash = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.lookupKind codeStore kindHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to lookup kind") $ err
-
-    Right (codeStore', kind)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure kind
+replLookupKind
+  = withContext (EMsg . text $ "Failed to lookup kind")
+  . withCodeStore
+  . CodeStore.lookupKind
 
 -- | Given an Expr Hash lookup the assocaited Type hash.
 --
@@ -828,16 +825,10 @@ replLookupKind kindHash = do
 replLookupExprsType
   :: Hash
   -> Repl (Maybe Hash)
-replLookupExprsType exprHash = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.lookupExprType codeStore exprHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to lookup exprs type") $ err
-
-    Right (codeStore', typeHash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure typeHash
+replLookupExprsType
+  = withContext (EMsg . text $ "Failed to lookup exprs type")
+  . withCodeStore
+  . CodeStore.lookupExprType
 
 -- | Given an Expr Hash lookup the assocaited Type hash.
 --
@@ -846,16 +837,10 @@ replLookupExprsType exprHash = do
 replLookupTypesKind
   :: Hash
   -> Repl (Maybe Hash)
-replLookupTypesKind typeHash = do
-  codeStore <- replCodeStore
-  eRes <- replIO $ CodeStore.lookupTypeKind codeStore typeHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Failed to lookup types kind") $ err
-
-    Right (codeStore', kindHash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = codeStore'})
-            pure kindHash
+replLookupTypesKind
+  = withContext (EMsg . text $ "Failed to lookup types kind")
+  . withCodeStore
+  . CodeStore.lookupTypeKind
 
 -- | Attempt to resolve all ShortHashes contained within an expression (it's
 -- patterns and it's types) into unambiguous ContentNames.
@@ -866,18 +851,11 @@ replResolveShortHashes
      )
   => ExprFor unresolved
   -> Repl (ExprFor resolved)
-replResolveShortHashes expr = do
+replResolveShortHashes
   -- TODO: Settle on concrete phases at this level.
-  codeStore <- replCodeStore
-  let resolveCtx = mkResolveCtx codeStore
-  eRes <- replIO . runResolve resolveCtx . resolveShortHashes $ expr
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Resolving short-hashes inside an expression") $ err
-
-    Right (resolveCtx', resolvedExpr)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
-            pure resolvedExpr
+  = withContext (EMsg . text $ "Resolving short-hashes inside an expression")
+  . withResolve
+  . resolveShortHashes
 
 -- | Attempt to resolve a ShortHash for an expression to an unambiguous Hash.
 --
@@ -887,17 +865,10 @@ replResolveShortHashes expr = do
 replResolveExprHash
   :: ShortHash
   -> Repl Hash
-replResolveExprHash shortHash = do
-  codeStore <- replCodeStore
-  let resolveCtx = mkResolveCtx codeStore
-  eRes <- replIO . runResolve resolveCtx . resolveExprHash $ shortHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Resolving a short-hash to an expression hash") $ err
-
-    Right (resolveCtx', resolvedHash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
-            pure resolvedHash
+replResolveExprHash
+  = withContext (EMsg . text $ "Resolving a short-hash to an expression hash")
+  . withResolve
+  . resolveExprHash
 
 -- | Attempt to resolve a ShortHash for a type to an unambiguous Hash.
 --
@@ -907,17 +878,10 @@ replResolveExprHash shortHash = do
 replResolveTypeHash
   :: ShortHash
   -> Repl Hash
-replResolveTypeHash shortHash = do
-  codeStore <- replCodeStore
-  let resolveCtx = mkResolveCtx codeStore
-  eRes <- replIO . runResolve resolveCtx . resolveTypeHash $ shortHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Resolving a short-hash to a type hash") $ err
-
-    Right (resolveCtx', resolvedHash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
-            pure resolvedHash
+replResolveTypeHash
+  = withContext (EMsg . text $ "Resolving a short-hash to a type hash")
+  . withResolve
+  . resolveTypeHash
 
 -- | Attempt to resolve a ShortHash for a kind to an unambiguous Hash.
 --
@@ -927,18 +891,10 @@ replResolveTypeHash shortHash = do
 replResolveKindHash
   :: ShortHash
   -> Repl Hash
-replResolveKindHash shortHash = do
-  codeStore <- replCodeStore
-  let resolveCtx = mkResolveCtx codeStore
-  eRes <- replIO . runResolve resolveCtx . resolveKindHash $ shortHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Resolving a short-hash to a kind hash") $ err
-
-    Right (resolveCtx', resolvedHash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
-            pure resolvedHash
-
+replResolveKindHash
+  = withContext (EMsg . text $ "Resolving a short-hash to a kind hash")
+  . withResolve
+  . resolveKindHash
 
 -- | Attempt to shorten all Hashes contained within an expression (it's patterns
 -- and it's types) into the shortest unambiguous ShortHashes.
@@ -949,65 +905,37 @@ replShortenHashes
      )
   => ExprFor long
   -> Repl (ExprFor short)
-replShortenHashes expr = do
-  codeStore <- replCodeStore
-  let resolveCtx = mkResolveCtx codeStore
-  eRes <- replIO . runResolve resolveCtx . shortenHashes $ expr
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Shortening hashes within an expression") $ err
-
-    Right (resolveCtx', shortenedExpr)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
-            pure shortenedExpr
+replShortenHashes
+  = withContext (EMsg . text $ "Shortening hashes within an expression")
+  . withResolve
+  . shortenHashes
 
 -- | Given an Expr Hash, shorten it to the shortest unambiguous ShortHash.
 replShortenExprHash
   :: Hash
   -> Repl ShortHash
-replShortenExprHash exprHash = do
-  codeStore <- replCodeStore
-  let resolveCtx = mkResolveCtx codeStore
-  eRes <- replIO . runResolve resolveCtx . shortenExprHash $ exprHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Shortening an expression hash") $ err
-
-    Right (resolveCtx', shortHash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
-            pure shortHash
+replShortenExprHash
+  = withContext (EMsg . text $ "Shortening an expression hash")
+  . withResolve
+  . shortenExprHash
 
 -- | Given an Type Hash, shorten it to the shortest unambiguous ShortHash.
 replShortenTypeHash
   :: Hash
   -> Repl ShortHash
-replShortenTypeHash typeHash = do
-  codeStore <- replCodeStore
-  let resolveCtx = mkResolveCtx codeStore
-  eRes <- replIO . runResolve resolveCtx . shortenTypeHash $ typeHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Shortening a type hash") $ err
-
-    Right (resolveCtx', shortHash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
-            pure shortHash
+replShortenTypeHash
+  = withContext (EMsg . text $ "Shortening a type hash")
+  . withResolve
+  . shortenTypeHash
 
 -- | Given an Kind Hash, shorten it to the shortest unambiguous ShortHash.
 replShortenKindHash
   :: Hash
   -> Repl ShortHash
-replShortenKindHash kindHash = do
-  codeStore <- replCodeStore
-  let resolveCtx = mkResolveCtx codeStore
-  eRes <- replIO . runResolve resolveCtx . shortenKindHash $ kindHash
-  case eRes of
-    Left err
-      -> replError . EContext (EMsg $ text "Shortening a kind hash") $ err
-
-    Right (resolveCtx', shortHash)
-      -> do replModifyCtx (\ctx -> ctx{_replCodeStore = _resolveCodeStore resolveCtx})
-            pure shortHash
+replShortenKindHash
+  = withContext (EMsg . text $ "Shortening a kind hash")
+  . withResolve
+  . shortenKindHash
 
 {-  Evaluation -}
 

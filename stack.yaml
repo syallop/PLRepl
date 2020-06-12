@@ -8,7 +8,7 @@ packages:
 - ./Lib
 extra-deps:
 - git: https://github.com/syallop/PLCore
-  commit: 270c0fcd8010a5d239b087ba2e64fb9ac8b1ef04
+  commit: 3ae6af407820b6915a2187baf6b8670d213d4098
 - git: https://github.com/syallop/PLEditor
   commit: eca85a4b7a0df4400e795e32a89ecbaa756c6567
 - git: https://github.com/syallop/PLLispy

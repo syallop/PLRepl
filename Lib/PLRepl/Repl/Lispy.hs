@@ -201,8 +201,8 @@ lispyExprRepl codeStore =
               [ text "Expression:"
               , lineBreak
               , indent1 . mconcat $
-                  [ text . showBase58 . _exprHash $ storeResult
-                  , case _exprResult storeResult of
+                  [ text . showBase58 . _storedAgainstHash . _exprResult $ storeResult
+                  , case _storeResult . _exprResult $ storeResult of
                       Successfully
                         -> mempty
                       AlreadyStored
@@ -219,8 +219,8 @@ lispyExprRepl codeStore =
               [ text "Type:"
               , lineBreak
               , indent1 . mconcat $
-                  [ text . showBase58 . _typeHash $ storeResult
-                  , case _typeResult storeResult of
+                  [ text . showBase58 . _storedAgainstHash . _typeResult $ storeResult
+                  , case _storeResult . _typeResult $ storeResult of
                       Successfully
                         -> mempty
                       AlreadyStored
@@ -237,8 +237,8 @@ lispyExprRepl codeStore =
               [ text "Kind:"
               , lineBreak
               , indent1 . mconcat $
-                  [ text . showBase58 . _kindHash $ storeResult
-                  , case _kindResult storeResult of
+                  [ text . showBase58 . _storedAgainstHash . _kindResult $ storeResult
+                  , case _storeResult . _kindResult $ storeResult of
                       Successfully
                         -> mempty
                       AlreadyStored
