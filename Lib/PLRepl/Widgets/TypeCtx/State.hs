@@ -74,12 +74,6 @@ typeDeps = TypeGrammarDependencies
   , _typeGrammarExtension = noExtG
   }
 
-
-ppRec :: Rec -> Doc
-ppRec r = PLPrinter.text $ case r of
-  Rec -> "Rec"
-  NonRec -> "NonRec"
-
 ppKind :: Kind -> Doc
 ppKind k = case k of
   Kind

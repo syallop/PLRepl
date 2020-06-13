@@ -377,7 +377,7 @@ drawUI (State st) = div_
     -> TypeCtx
     -> View (Event Name)
   drawTypeCtx _typCtxCursor typeCtx =
-     let txt = (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) $ typeCtx
+     let txt = (PLPrinter.render . ppTypeCtx document ppType) $ typeCtx
      in div_
           [ id_ "type-ctx"
           ]

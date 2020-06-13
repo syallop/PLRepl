@@ -565,11 +565,12 @@ replTypeCheck exprContentHasType typeContentIsType expr = do
 replKindCheck
   :: Map ContentName Kind
   -> BindCtx TyVar Kind
+  -> Maybe Kind
   -> Type
   -> Repl Kind
-replKindCheck contentBindingKinds typeKinds typ = do
+replKindCheck contentBindingKinds typeKinds mSelfKind typ = do
   typeCtx <- replTypeCtx
-  case typeKind typeKinds contentBindingKinds typeCtx typ of
+  case typeKind typeKinds contentBindingKinds mSelfKind typeCtx typ of
     Left err
       -> replError $ EContext (EMsg $ text "Kind-checking top-level type") $ err
 

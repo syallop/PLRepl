@@ -138,7 +138,7 @@ typeCtxStateGivenReplTypeCtx
   :: TypeCtx
   -> TypeCtxState
 typeCtxStateGivenReplTypeCtx typeCtx
-  = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx document (ppTypeInfo ppType)) $ typeCtx
+  = newTypeCtxState . Text.lines . (PLPrinter.render . ppTypeCtx document ppType) $ typeCtx
   where
     ppType = fromMaybe mempty . pprint (toPrinter $ top $ typ typeDeps)
 

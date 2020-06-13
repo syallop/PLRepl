@@ -164,7 +164,7 @@ lispyExprRepl codeStore =
                , text "All named types referenced at the top-level have a known kind."
                , lineBreak
                ]
-        checkedKind <- replKindCheck contentBindingKinds emptyCtx checkedType
+        checkedKind <- replKindCheck contentBindingKinds emptyCtx Nothing checkedType
         replLog . mconcat $
           [ lineBreak
           , text "Whose type has kind:"
@@ -753,7 +753,7 @@ ppDefaultError = PPError
     , _ppType        = ppType
     , _ppPattern     = ppPattern
     , _ppKind        = ppKind
-    , _ppTypeCtx     = ppTypeCtx document (ppTypeInfo ppType)
+    , _ppTypeCtx     = ppTypeCtx document ppType
     , _ppTypeName    = document
     , _ppBinding     = ppVar
     , _ppTypeBinding = ppTyVar
