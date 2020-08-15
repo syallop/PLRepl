@@ -6,6 +6,7 @@ extra-package-dbs: []
 packages:
 - ./Terminal
 - ./Lib
+- ./CLI
 extra-deps:
 - git: https://github.com/syallop/PLCore
   commit: f168908c2f4a96cda3827f94edf2db096b670d75
