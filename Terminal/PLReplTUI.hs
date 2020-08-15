@@ -46,6 +46,7 @@ signatures.
 -}
 module PLReplTUI
   ( run
+  , codeStore
   )
   where
 
