@@ -85,6 +85,15 @@ data Command
   -- | Execute the TUI repl.
   | TerminalREPL
 
+  -- | Resolve an expression short hash to a hash
+  | ResolveExpr ShortHash
+
+  -- | Resolve a type short hash to a hash
+  | ResolveType ShortHash
+
+  -- | Resolve a kind short hash to a hash
+  | ResolveKind ShortHash
+
   -- | Lookup an expression by it's hash
   | LookupExpr ShortHash
 
@@ -93,6 +102,7 @@ data Command
 
   -- | Lookup a kind by it's hash
   | LookupKind ShortHash
+
   deriving Show
 
 -- | Read and parse command line options into a Command.
@@ -106,46 +116,39 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
 
     mkCommand (name, desc, parser) = command name $ info parser (progDesc desc)
 
+    -- Top-level commands
     commandParser :: O.Parser Command
-    commandParser = hsubparser . mconcat . fmap mkCommand $ [terminalRepl, version, lookup]
+    commandParser = hsubparser . mconcat . fmap mkCommand $
+      [ terminalRepl
+      , version
+      , lookup
+      , resolve
+      ]
 
     terminalRepl = ("repl"   , "start a repl to Read, Evaluate, Print (Loop) code", pure TerminalREPL)
     version      = ("version", "show the version of PL being used",                 pure ShowVersion)
-    lookup       = ("lookup",  "lookup something associated with a hash",           hsubparser . mconcat . fmap mkCommand $
-                                                                                      [ ("expr", "lookup an expression associated with a hash", lookupExpr)
-                                                                                      , ("type", "lookup a type associated with a hash"       , lookupType)
-                                                                                      , ("kind", "lookup a kind associated with a hash"       , lookupKind)
-                                                                                      ])
 
-    lookupExpr = LookupExpr <$> (argument readShortHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
-    lookupType = LookupType <$> (argument readShortHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
-    lookupKind = LookupKind <$> (argument readShortHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
+    -- Sub-commands of lookup
+    lookup = ("lookup", "lookup something associated with a hash", hsubparser . mconcat . fmap mkCommand $
+      [ ("expr", "lookup an expression associated with a hash", lookupExpr)
+      , ("type", "lookup a type associated with a hash"       , lookupType)
+      , ("kind", "lookup a kind associated with a hash"       , lookupKind)
+      ])
+     where
+      lookupExpr = LookupExpr <$> (argument readShortHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
+      lookupType = LookupType <$> (argument readShortHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
+      lookupKind = LookupKind <$> (argument readShortHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
 
-    readShortHash :: ReadM ShortHash
-    readShortHash = readGrammar Lispy.shortHash
-
-    -- Use a Grammar to read an argument type
-    readGrammar :: Grammar a -> ReadM a
-    readGrammar g = do
-      let plPrinter = fromMaybe mempty . pprint (toPrinter g)
-          plParser  = toParser g
-
-      txt <- Text.pack <$> readerAsk
-
-      case PLParser.runParser plParser txt of
-                f@(PLParser.ParseFailure expected cursor)
-                  -> readerError . Text.unpack . render . ppParseResult plPrinter $ f
-
-                s@(PLParser.ParseSuccess expr cursor)
-                  | noTrailingCharacters $ PLParser.remainder cursor
-                   -> pure expr
-
-                  | otherwise
-                   -> readerError . Text.unpack . render . mconcat $ [ text "Parse succeeded but there were trailing characters: ", lineBreak, document cursor]
-
-      where
-        noTrailingCharacters :: Text -> Bool
-        noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
+    -- Sub-commands of resolve
+    resolve = ("resolve", "resolve a short hash to an unambiguous long-hash", hsubparser . mconcat . fmap mkCommand $
+      [ ("expr", "resolve an expressions short hash to an unambiguous long-hash", resolveExpr)
+      , ("type", "resolve a types short hash to an unambiguous long-hash"       , resolveType)
+      , ("kind", "resolve a kinds short hash to an unambiguous long-hash"       , resolveKind)
+      ])
+     where
+      resolveExpr = ResolveExpr <$> (argument readShortHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
+      resolveType = ResolveType <$> (argument readShortHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
+      resolveKind = ResolveKind <$> (argument readShortHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
 
 
     -- Build a replctx by hijacking the codestore used in the TUI.
@@ -166,6 +169,7 @@ runCommand cmd = case cmd of
   TerminalREPL
     -> runTerminalREPL
 
+  -- Lookup
   LookupExpr shortHash
     -> runLookupExpr shortHash replCtx
 
@@ -174,6 +178,17 @@ runCommand cmd = case cmd of
 
   LookupKind shortHash
     -> runLookupKind shortHash replCtx
+
+  -- Resolve
+  ResolveExpr shortHash
+    -> runResolveExpr shortHash replCtx
+
+  ResolveType shortHash
+    -> runResolveType shortHash replCtx
+
+  ResolveKind shortHash
+    -> runResolveKind shortHash replCtx
+
   where
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -199,11 +214,20 @@ runLookupType = runLookupFor "type" replResolveTypeHash replLookupType Lispy.ppT
 runLookupKind :: ShortHash -> ReplCtx -> IO ()
 runLookupKind = runLookupFor "kind" replResolveKindHash replLookupKind Lispy.ppKind
 
+runResolveExpr :: ShortHash -> ReplCtx -> IO ()
+runResolveExpr = runResolveFor replResolveExprHash
+
+runResolveType :: ShortHash -> ReplCtx -> IO ()
+runResolveType = runResolveFor replResolveTypeHash
+
+runResolveKind :: ShortHash -> ReplCtx -> IO ()
+runResolveKind = runResolveFor replResolveKindHash
+
 -- For a named thing:
 -- - Resolve a short hash into a full hash
 -- - Lookup the thing associated with the full hash
 runLookupFor :: forall a. Text -> (ShortHash -> Repl Hash) -> (Hash -> Repl (Maybe a)) -> (a -> Doc) -> ShortHash -> ReplCtx -> IO ()
-runLookupFor thing resolveF lookupF ppF shortHash replCtx = do
+runLookupFor thing resolveF lookupF ppThing shortHash replCtx = do
   (_replCtx, log, eRes) <- runRepl replCtx $ do
     hash <- resolveF shortHash
     replLog . mconcat $ [ text "Resolved full ", text thing, text " hash: "
@@ -218,13 +242,28 @@ runLookupFor thing resolveF lookupF ppF shortHash replCtx = do
     Left err
       -> writeFatalError err
 
-    Right mKind
-      -> case mKind of
+    Right mThing
+      -> case mThing of
            Nothing
              -> writeDoc (text $ "There is no known "<>thing<>" with the given hash")
 
-           Just kind
-             -> writeDoc . ppF $ kind
+           Just thing
+             -> writeDoc . ppThing $ thing
+
+-- For a type of short hash, resolve it into a full hash.
+runResolveFor :: (ShortHash -> Repl Hash) -> ShortHash -> ReplCtx -> IO ()
+runResolveFor resolveF shortHash replCtx = do
+  (_replCtx, log, eRes) <- runRepl replCtx $ resolveF shortHash
+  writeDoc log
+  case eRes of
+    Left err
+      -> writeFatalError err
+
+    -- TODO: Write using lispy
+    Right hash
+      -> writeDoc . mconcat $ [ fromMaybe mempty . pprint (toPrinter (PLGrammar.charIs '#' */ Lispy.base58Hash)) $ hash
+                              , lineBreak
+                              ]
 
 {- Internal helper functions -}
 
@@ -232,7 +271,7 @@ runLookupFor thing resolveF lookupF ppF shortHash replCtx = do
 writeDoc :: Doc -> IO ()
 writeDoc doc = do
   stdoutInteractive <- queryTerminal stdOutput
-  when stdoutInteractive $ Text.putStrLn . PLPrinter.render $ doc
+  when stdoutInteractive $ Text.putStr . PLPrinter.render $ doc
 
 -- Write an Error to stderr using lispy syntax then fail with a non-zero exit
 -- code.
@@ -244,4 +283,30 @@ writeFatalError err = do
 -- Assume hashes are provided in Lispy syntax
 parseShortHash :: String -> Repl ShortHash
 parseShortHash shortHashString = plGrammarParser Lispy.shortHash $ Text.pack shortHashString
+
+readShortHash :: ReadM ShortHash
+readShortHash = readGrammar Lispy.shortHash
+
+-- Use a Grammar to read an argument type
+readGrammar :: Grammar a -> ReadM a
+readGrammar g = do
+  let plPrinter = fromMaybe mempty . pprint (toPrinter g)
+      plParser  = toParser g
+
+  txt <- Text.pack <$> readerAsk
+
+  case PLParser.runParser plParser txt of
+            f@(PLParser.ParseFailure expected cursor)
+              -> readerError . Text.unpack . render . ppParseResult plPrinter $ f
+
+            s@(PLParser.ParseSuccess expr cursor)
+              | noTrailingCharacters $ PLParser.remainder cursor
+               -> pure expr
+
+              | otherwise
+               -> readerError . Text.unpack . render . mconcat $ [ text "Parse succeeded but there were trailing characters: ", lineBreak, document cursor]
+
+  where
+    noTrailingCharacters :: Text -> Bool
+    noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
 
