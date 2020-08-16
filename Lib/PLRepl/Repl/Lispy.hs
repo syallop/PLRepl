@@ -46,6 +46,8 @@ module PLRepl.Repl.Lispy
   , ppKind
   , ppVar
   , ppTyVar
+
+  , ppParseResult
   )
   where
 

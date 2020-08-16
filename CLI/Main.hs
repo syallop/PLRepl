@@ -46,22 +46,26 @@ import PL.Var
 -- Other PL
 import PLGrammar
 import PLPrinter
+import PLParser
 import Reversible
 import Reversible.Iso
+import PLLispy
 import qualified PLLispy.Name as Lispy
 
 -- External
+import Control.Monad
+import Data.Maybe
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Options.Applicative hiding (Parser, ParserInfo)
+import Options.Applicative.Types
 import System.Exit
+import System.IO
+import System.Posix.IO
+import System.Posix.Terminal
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import qualified Options.Applicative as O
-import Control.Monad
-import System.Posix.Terminal
-import System.Posix.IO
-import System.IO
 
 
 -- Hardcode the version of the CLI.
@@ -82,13 +86,13 @@ data Command
   | TerminalREPL
 
   -- | Lookup an expression by it's hash
-  | LookupExpr String
+  | LookupExpr ShortHash
 
   -- | Lookup a type by it's hash
-  | LookupType String
+  | LookupType ShortHash
 
   -- | Lookup a kind by it's hash
-  | LookupKind String
+  | LookupKind ShortHash
   deriving Show
 
 -- | Read and parse command line options into a Command.
@@ -113,9 +117,46 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
                                                                                       , ("kind", "lookup a kind associated with a hash"       , lookupKind)
                                                                                       ])
 
-    lookupExpr = LookupExpr <$> (strArgument $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
-    lookupType = LookupType <$> (strArgument $ mconcat [help "Type hash", metavar "TYPE_HASH"])
-    lookupKind = LookupKind <$> (strArgument $ mconcat [help "Kind hash", metavar "KIND_HASH"])
+    lookupExpr = LookupExpr <$> (argument readShortHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
+    lookupType = LookupType <$> (argument readShortHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
+    lookupKind = LookupKind <$> (argument readShortHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
+
+    readShortHash :: ReadM ShortHash
+    readShortHash = readGrammar Lispy.shortHash
+
+    -- Use a Grammar to read an argument type
+    readGrammar :: Grammar a -> ReadM a
+    readGrammar g = do
+      let plPrinter = fromMaybe mempty . pprint (toPrinter g)
+          plParser  = toParser g
+
+      txt <- Text.pack <$> readerAsk
+
+      case PLParser.runParser plParser txt of
+                f@(PLParser.ParseFailure expected cursor)
+                  -> readerError . Text.unpack . render . ppParseResult plPrinter $ f
+
+                s@(PLParser.ParseSuccess expr cursor)
+                  | noTrailingCharacters $ PLParser.remainder cursor
+                   -> pure expr
+
+                  | otherwise
+                   -> readerError . Text.unpack . render . mconcat $ [ text "Parse succeeded but there were trailing characters: ", lineBreak, document cursor]
+
+      where
+        noTrailingCharacters :: Text -> Bool
+        noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
+
+
+    -- Build a replctx by hijacking the codestore used in the TUI.
+    -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
+    -- Lib
+    replCtx :: ReplCtx
+    replCtx = mkReplCtx typeCtx TUI.codeStore
+
+    typeCtx :: TypeCtx
+    typeCtx = sharedTypeCtx
+
 
 runCommand :: Command -> IO ()
 runCommand cmd = case cmd of
@@ -125,14 +166,14 @@ runCommand cmd = case cmd of
   TerminalREPL
     -> runTerminalREPL
 
-  LookupExpr shortHashString
-    -> runLookupExpr shortHashString replCtx
+  LookupExpr shortHash
+    -> runLookupExpr shortHash replCtx
 
-  LookupType shortHashString
-    -> runLookupType shortHashString replCtx
+  LookupType shortHash
+    -> runLookupType shortHash replCtx
 
-  LookupKind shortHashString
-    -> runLookupKind shortHashString replCtx
+  LookupKind shortHash
+    -> runLookupKind shortHash replCtx
   where
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -149,27 +190,27 @@ runShowVersion = putStrLn version
 runTerminalREPL :: IO ()
 runTerminalREPL = TUI.run
 
-runLookupExpr :: String -> ReplCtx -> IO ()
+runLookupExpr :: ShortHash -> ReplCtx -> IO ()
 runLookupExpr = runLookupFor "expr" replResolveExprHash replLookupExpr Lispy.ppExpr
 
-runLookupType :: String -> ReplCtx -> IO ()
+runLookupType :: ShortHash -> ReplCtx -> IO ()
 runLookupType = runLookupFor "type" replResolveTypeHash replLookupType Lispy.ppType
 
-runLookupKind :: String -> ReplCtx -> IO ()
+runLookupKind :: ShortHash -> ReplCtx -> IO ()
 runLookupKind = runLookupFor "kind" replResolveKindHash replLookupKind Lispy.ppKind
 
 -- For a named thing:
 -- - Resolve a short hash into a full hash
 -- - Lookup the thing associated with the full hash
-runLookupFor :: forall a. Text -> (ShortHash -> Repl Hash) -> (Hash -> Repl (Maybe a)) -> (a -> Doc) -> String -> ReplCtx -> IO ()
-runLookupFor thing resolveF lookupF ppF shortHashString replCtx = do
+runLookupFor :: forall a. Text -> (ShortHash -> Repl Hash) -> (Hash -> Repl (Maybe a)) -> (a -> Doc) -> ShortHash -> ReplCtx -> IO ()
+runLookupFor thing resolveF lookupF ppF shortHash replCtx = do
   (_replCtx, log, eRes) <- runRepl replCtx $ do
-    shortHash <- parseShortHash shortHashString
-    replLog . mconcat $ [text "Parsed short hash:\t", string . show $ shortHash, lineBreak]
-
     hash <- resolveF shortHash
-    replLog . mconcat $ [text "Resolved ", text thing, text " hash:\t", string . show $ hash, lineBreak]
-
+    replLog . mconcat $ [ text "Resolved full ", text thing, text " hash: "
+                        , lineBreak
+                        , indent1 $ string . show $ hash
+                        , lineBreak
+                        ]
     lookupF hash
 
   writeDoc log
