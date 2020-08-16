@@ -103,6 +103,14 @@ data Command
   -- | Lookup a kind by it's hash
   | LookupKind ShortHash
 
+  -- | Shorten an expr hash to an unambiguous shorthash
+  | ShortenExpr Hash
+
+  -- | Shorten a type hash to an unambiguous shorthash
+  | ShortenType Hash
+
+  -- | Shorten a kind hash to an unambiguous shorthash
+  | ShortenKind Hash
   deriving Show
 
 -- | Read and parse command line options into a Command.
@@ -123,6 +131,7 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       , version
       , lookup
       , resolve
+      , shorten
       ]
 
     terminalRepl = ("repl"   , "start a repl to Read, Evaluate, Print (Loop) code", pure TerminalREPL)
@@ -150,6 +159,17 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       resolveType = ResolveType <$> (argument readShortHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
       resolveKind = ResolveKind <$> (argument readShortHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
 
+    -- Sub-commands of shorten
+    shorten = ("shorten", "shorten a hash to a (currently) unambiguous short-hash", hsubparser . mconcat . fmap mkCommand $
+      [ ("expr", "shorten an expressions hash to a (currently) unambiguous short-hash", shortenExpr)
+      , ("type", "shorten a types hash to a (currently) unambiguous short-hash"       , shortenType)
+      , ("kind", "shorten a kinds hash to a (currently) unambiguous short-hash"       , shortenKind)
+      ])
+     where
+      shortenExpr = ShortenExpr <$> (argument readHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
+      shortenType = ShortenType <$> (argument readHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
+      shortenKind = ShortenKind <$> (argument readHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
+
 
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -169,7 +189,7 @@ runCommand cmd = case cmd of
   TerminalREPL
     -> runTerminalREPL
 
-  -- Lookup
+  -- Lookup short/long hashes associated code
   LookupExpr shortHash
     -> runLookupExpr shortHash replCtx
 
@@ -179,7 +199,7 @@ runCommand cmd = case cmd of
   LookupKind shortHash
     -> runLookupKind shortHash replCtx
 
-  -- Resolve
+  -- Resolve short hashes to long hashes
   ResolveExpr shortHash
     -> runResolveExpr shortHash replCtx
 
@@ -188,6 +208,16 @@ runCommand cmd = case cmd of
 
   ResolveKind shortHash
     -> runResolveKind shortHash replCtx
+
+  -- Shorten long hashes to unambigous short-hashes
+  ShortenExpr hash
+    -> runShortenExpr hash replCtx
+
+  ShortenType hash
+    -> runShortenType hash replCtx
+
+  ShortenKind hash
+    -> runShortenKind hash replCtx
 
   where
     -- Build a replctx by hijacking the codestore used in the TUI.
@@ -222,6 +252,15 @@ runResolveType = runResolveFor replResolveTypeHash
 
 runResolveKind :: ShortHash -> ReplCtx -> IO ()
 runResolveKind = runResolveFor replResolveKindHash
+
+runShortenExpr :: Hash -> ReplCtx -> IO ()
+runShortenExpr = runShortenFor replShortenExprHash
+
+runShortenType :: Hash -> ReplCtx -> IO ()
+runShortenType = runShortenFor replShortenTypeHash
+
+runShortenKind :: Hash -> ReplCtx -> IO ()
+runShortenKind = runShortenFor replShortenKindHash
 
 -- For a named thing:
 -- - Resolve a short hash into a full hash
@@ -259,11 +298,26 @@ runResolveFor resolveF shortHash replCtx = do
     Left err
       -> writeFatalError err
 
-    -- TODO: Write using lispy
     Right hash
       -> writeDoc . mconcat $ [ fromMaybe mempty . pprint (toPrinter (PLGrammar.charIs '#' */ Lispy.base58Hash)) $ hash
                               , lineBreak
                               ]
+
+-- For a type of long hash, resolve it to the shortest unambiguous hash given
+-- the set of known hashes.
+runShortenFor :: (Hash -> Repl ShortHash) -> Hash -> ReplCtx -> IO ()
+runShortenFor shortenF hash replCtx = do
+  (_replCtx, log, eRes) <- runRepl replCtx $ shortenF hash
+  writeDoc log
+  case eRes of
+    Left err
+      -> writeFatalError err
+
+    Right shortHash
+      -> writeDoc . mconcat $ [ fromMaybe mempty . pprint (toPrinter (Lispy.shortHash)) $ shortHash
+                              , lineBreak
+                              ]
+
 
 {- Internal helper functions -}
 
@@ -286,6 +340,9 @@ parseShortHash shortHashString = plGrammarParser Lispy.shortHash $ Text.pack sho
 
 readShortHash :: ReadM ShortHash
 readShortHash = readGrammar Lispy.shortHash
+
+readHash :: ReadM Hash
+readHash = readGrammar (PLGrammar.charIs '#' */ Lispy.base58Hash)
 
 -- Use a Grammar to read an argument type
 readGrammar :: Grammar a -> ReadM a
