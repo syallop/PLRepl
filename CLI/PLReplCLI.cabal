@@ -26,12 +26,13 @@ executable pl
 
                      , containers
                      , directory
-                     , optparse-applicative
                      , megaparsec
                      , mtl
+                     , optparse-applicative
+                     , random
                      , text
                      , transformers
-                     , random
+                     , unix
                      , vty
 
   default-language:    Haskell2010

@@ -2,6 +2,7 @@
     FlexibleContexts
   , ImplicitParams
   , OverloadedStrings
+  , RankNTypes
   , TemplateHaskell
   , TypeSynonymInstances
   , FlexibleInstances
@@ -28,6 +29,7 @@ import PL.Binds
 import PL.CodeStore
 import PL.Error
 import PL.Expr
+import PL.FixPhase
 import PL.Hash
 import PL.HashStore
 import PL.Kind
@@ -56,6 +58,10 @@ import System.Exit
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import qualified Options.Applicative as O
+import Control.Monad
+import System.Posix.Terminal
+import System.Posix.IO
+import System.IO
 
 
 -- Hardcode the version of the CLI.
@@ -114,79 +120,19 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
 runCommand :: Command -> IO ()
 runCommand cmd = case cmd of
   ShowVersion
-    -> putStrLn version
+    -> runShowVersion
 
   TerminalREPL
-    -> TUI.run
+    -> runTerminalREPL
 
   LookupExpr shortHashString
-    -> do (_replCtx, log, eRes) <- runRepl replCtx $ do
-            -- Assume hashes are provided in Lispy syntax
-            shortHash <- plGrammarParser Lispy.shortHash $ Text.pack shortHashString
-            hash <- replResolveExprHash shortHash
-            replLookupExpr hash
-          case eRes of
-            Left err
-              -> do Text.putStrLn . PLPrinter.render . mconcat $
-                      [ ppError Lispy.ppDefaultError $ err
-                      , lineBreak
-                      , log
-                      ]
-                    exitFailure
-
-            Right mExpr
-              -> case mExpr of
-                   Nothing
-                     -> putStrLn "There are no known expressions with the given hash"
-
-                   Just expr
-                     -> Text.putStrLn . PLPrinter.render . Lispy.ppExpr $ expr
+    -> runLookupExpr shortHashString replCtx
 
   LookupType shortHashString
-    -> do (_replCtx, log, eRes) <- runRepl replCtx $ do
-            -- Assume hashes are provided in Lispy syntax
-            shortHash <- plGrammarParser Lispy.shortHash $ Text.pack shortHashString
-            hash <- replResolveTypeHash shortHash
-            replLookupType hash
-          case eRes of
-            Left err
-              -> do Text.putStrLn . PLPrinter.render . mconcat $
-                      [ ppError Lispy.ppDefaultError $ err
-                      , lineBreak
-                      , log
-                      ]
-                    exitFailure
-
-            Right mType
-              -> case mType of
-                   Nothing
-                     -> putStrLn "There are no known types with the given hash"
-
-                   Just typ
-                     -> Text.putStrLn . PLPrinter.render . Lispy.ppType $ typ
+    -> runLookupType shortHashString replCtx
 
   LookupKind shortHashString
-    -> do (_replCtx, log, eRes) <- runRepl replCtx $ do
-            -- Assume hashes are provided in Lispy syntax
-            shortHash <- plGrammarParser Lispy.shortHash $ Text.pack shortHashString
-            hash <- replResolveKindHash shortHash
-            replLookupKind hash
-          case eRes of
-            Left err
-              -> do Text.putStrLn . PLPrinter.render . mconcat $
-                      [ ppError Lispy.ppDefaultError $ err
-                      , lineBreak
-                      , log
-                      ]
-                    exitFailure
-
-            Right mKind
-              -> case mKind of
-                   Nothing
-                     -> putStrLn "There are no known kinds with the given hash"
-
-                   Just kind
-                     -> Text.putStrLn . PLPrinter.render . Lispy.ppKind $ kind
+    -> runLookupKind shortHashString replCtx
   where
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -196,4 +142,65 @@ runCommand cmd = case cmd of
 
     typeCtx :: TypeCtx
     typeCtx = sharedTypeCtx
+
+runShowVersion :: IO ()
+runShowVersion = putStrLn version
+
+runTerminalREPL :: IO ()
+runTerminalREPL = TUI.run
+
+runLookupExpr :: String -> ReplCtx -> IO ()
+runLookupExpr = runLookupFor "expr" replResolveExprHash replLookupExpr Lispy.ppExpr
+
+runLookupType :: String -> ReplCtx -> IO ()
+runLookupType = runLookupFor "type" replResolveTypeHash replLookupType Lispy.ppType
+
+runLookupKind :: String -> ReplCtx -> IO ()
+runLookupKind = runLookupFor "kind" replResolveKindHash replLookupKind Lispy.ppKind
+
+-- For a named thing:
+-- - Resolve a short hash into a full hash
+-- - Lookup the thing associated with the full hash
+runLookupFor :: forall a. Text -> (ShortHash -> Repl Hash) -> (Hash -> Repl (Maybe a)) -> (a -> Doc) -> String -> ReplCtx -> IO ()
+runLookupFor thing resolveF lookupF ppF shortHashString replCtx = do
+  (_replCtx, log, eRes) <- runRepl replCtx $ do
+    shortHash <- parseShortHash shortHashString
+    replLog . mconcat $ [text "Parsed short hash:\t", string . show $ shortHash, lineBreak]
+
+    hash <- resolveF shortHash
+    replLog . mconcat $ [text "Resolved ", text thing, text " hash:\t", string . show $ hash, lineBreak]
+
+    lookupF hash
+
+  writeDoc log
+  case eRes of
+    Left err
+      -> writeFatalError err
+
+    Right mKind
+      -> case mKind of
+           Nothing
+             -> writeDoc (text $ "There is no known "<>thing<>" with the given hash")
+
+           Just kind
+             -> writeDoc . ppF $ kind
+
+{- Internal helper functions -}
+
+-- Write a document to stdout if and only if stdout is connected to an interactive tty, otherwise write nothing.
+writeDoc :: Doc -> IO ()
+writeDoc doc = do
+  stdoutInteractive <- queryTerminal stdOutput
+  when stdoutInteractive $ Text.putStrLn . PLPrinter.render $ doc
+
+-- Write an Error to stderr using lispy syntax then fail with a non-zero exit
+-- code.
+writeFatalError :: Error -> IO ()
+writeFatalError err = do
+  Text.hPutStrLn stderr . PLPrinter.render . mconcat $ [ppError Lispy.ppDefaultError err, lineBreak]
+  exitFailure
+
+-- Assume hashes are provided in Lispy syntax
+parseShortHash :: String -> Repl ShortHash
+parseShortHash shortHashString = plGrammarParser Lispy.shortHash $ Text.pack shortHashString
 
