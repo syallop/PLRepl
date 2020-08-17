@@ -35,6 +35,7 @@ import PL.HashStore
 import PL.Kind
 import PL.Serialize
 import PL.Store
+import PL.Commented
 import PL.Store.File
 import PL.Store.Memory
 import PL.Store.Nested
@@ -88,30 +89,40 @@ data Command
 
   -- | Resolve an expression short hash to a hash
   | ResolveExpr ShortHash
-
   -- | Resolve a type short hash to a hash
   | ResolveType ShortHash
-
   -- | Resolve a kind short hash to a hash
   | ResolveKind ShortHash
 
   -- | Lookup an expression by it's hash
   | LookupExpr ShortHash
-
   -- | Lookup a type by it's hash
   | LookupType ShortHash
-
   -- | Lookup a kind by it's hash
   | LookupKind ShortHash
 
   -- | Shorten an expr hash to an unambiguous shorthash
   | ShortenExpr Hash
-
   -- | Shorten a type hash to an unambiguous shorthash
   | ShortenType Hash
-
   -- | Shorten a kind hash to an unambiguous shorthash
   | ShortenKind Hash
+
+  -- The Parse* commands are weird because they take the parsed thing as an
+  -- argument. This is because the string->* logic is pushed into the command
+  -- line argument parser itself.
+  -- Another distinction is that the input may include comments whereas the
+  -- output might have them stripped.
+
+  -- | Parse a textual representation of an expression, checking it is
+  -- syntactically valid only.
+  | ParseExpr (ExprFor CommentedPhase)
+  -- | Parse a textual representation of a type, checking it is
+  -- syntactically valid only.
+  | ParseType (TypeFor CommentedPhase)
+ -- | Parse a textual representation of a kind, checking it is
+  -- syntactically valid only.
+  | ParseKind Kind
   deriving Show
 
 -- | Read and parse command line options into a Command.
@@ -139,6 +150,16 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
           , lineBreak
           , indent1 . mconcat $
               [ text "> pl repl"
+              , lineBreak
+              ]
+          , lineBreak
+
+          , text "Parse an expression"
+          , lineBreak
+          , indent1 . mconcat $
+              [ text "> pl parse expr '\\(*) 0'"
+              , lineBreak
+              , text "λ(*) 0"
               , lineBreak
               ]
           , lineBreak
@@ -186,9 +207,12 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
     commandParser = hsubparser . mconcat . fmap mkCommand $
       [ terminalRepl
       , version
+
       , lookup
       , resolve
       , shorten
+
+      , parse
       ]
 
     terminalRepl = ("repl"   , "start a repl to Read, Evaluate, Print (Loop) code", pure TerminalREPL)
@@ -227,6 +251,17 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       shortenType = ShortenType <$> (argument readHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
       shortenKind = ShortenKind <$> (argument readHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
 
+    -- Sub-commands of parse
+    parse = ("parse", "parse code, checking that it is syntactically correct only", hsubparser . mconcat . fmap mkCommand $
+      [ ("expr", "parse an expression, checking that it is syntactically correct only", parseExpr)
+      , ("type", "parse a type, checking that it is syntactically correct only"       , parseType)
+      , ("kind", "parse a kind, checking that it is syntactically correct only"       , parseKind)
+      ])
+
+     where
+      parseExpr = ParseExpr <$> (argument readExpr $ mconcat [help "Expression text", metavar "EXPR_TEXT"])
+      parseType = ParseType <$> (argument readType $ mconcat [help "Type text", metavar "TYPE_TEXT"])
+      parseKind = ParseKind <$> (argument readKind $ mconcat [help "Kind text", metavar "KIND_TEXT"])
 
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -276,6 +311,14 @@ runCommand cmd = case cmd of
   ShortenKind hash
     -> runShortenKind hash replCtx
 
+  ParseExpr commentedExpr
+    -> runParseExpr commentedExpr replCtx
+
+  ParseType commentedType
+    -> runParseType commentedType replCtx
+
+  ParseKind kind
+    -> runParseKind kind replCtx
   where
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -318,6 +361,15 @@ runShortenType = runShortenFor replShortenTypeHash
 
 runShortenKind :: Hash -> ReplCtx -> IO ()
 runShortenKind = runShortenFor replShortenKindHash
+
+runParseExpr :: ExprFor CommentedPhase -> ReplCtx -> IO ()
+runParseExpr = runParseFor Lispy.ppCommentedExpr
+
+runParseType :: TypeFor CommentedPhase -> ReplCtx -> IO ()
+runParseType = runParseFor Lispy.ppCommentedType
+
+runParseKind :: Kind -> ReplCtx -> IO ()
+runParseKind = runParseFor Lispy.ppKind
 
 -- For a named thing:
 -- - Resolve a short hash into a full hash
@@ -375,6 +427,9 @@ runShortenFor shortenF hash replCtx = do
                               , lineBreak
                               ]
 
+runParseFor :: (a -> Doc) -> a -> ReplCtx -> IO ()
+runParseFor ppThing thing _replCtx = writeDoc . ppThing $ thing
+
 
 {- Internal helper functions -}
 
@@ -400,6 +455,15 @@ readShortHash = readGrammar Lispy.shortHash
 
 readHash :: ReadM Hash
 readHash = readGrammar (PLGrammar.charIs '#' */ Lispy.base58Hash)
+
+readExpr :: ReadM (ExprFor CommentedPhase)
+readExpr = readGrammar Lispy.commentedExprGrammar
+
+readType :: ReadM (TypeFor CommentedPhase)
+readType = readGrammar Lispy.commentedTypeGrammar
+
+readKind :: ReadM Kind
+readKind = readGrammar PLLispy.kind
 
 -- Use a Grammar to read an argument type
 readGrammar :: Grammar a -> ReadM a
