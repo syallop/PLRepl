@@ -338,6 +338,14 @@ runCommand cmd = case cmd of
 
   TypeCheck expr
     -> runTypeCheck expr replCtx
+
+  cmd
+    -> writeFatalError . EMsg . mconcat $
+         [ text "pl has parsed a command that it does not understand how to execute:"
+         , lineBreak
+         , string . show $ cmd
+         , lineBreak
+         ]
   where
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
