@@ -29,6 +29,7 @@ executable pl
                      , megaparsec
                      , mtl
                      , optparse-applicative
+                     , ansi-wl-pprint
                      , random
                      , text
                      , transformers

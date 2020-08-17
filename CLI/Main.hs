@@ -61,6 +61,7 @@ import Options.Applicative hiding (Parser, ParserInfo)
 import Options.Applicative.Types
 import System.Exit
 import System.IO
+import qualified Text.PrettyPrint.ANSI.Leijen as ANSI
 import System.Posix.IO
 import System.Posix.Terminal
 import qualified Data.Text as Text
@@ -120,7 +121,63 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
     commandParserInfo :: O.ParserInfo Command
     commandParserInfo = info (commandParser <**> helper) (progDescDoc $ Just usage)
 
-    usage = "Usage"
+    usage = ANSI.string . Text.unpack . render . mconcat $
+      [ text "pl is an entry point for interaction with the pl language and it's surrounding capabilities."
+      , lineBreak
+      , lineBreak
+      , text "Language overview:\thttps://github.com/syallop/PL"
+      , lineBreak
+      , text "Hosted repl:\t\thttps://yallop.computer/PL"
+      , lineBreak
+      , lineBreak
+
+      , text "Examples:"
+      , lineBreak
+
+      , indent 1 . mconcat $
+          [ text "Open a repl for entering, storing and evaluating expressions"
+          , lineBreak
+          , indent1 . mconcat $
+              [ text "> pl repl"
+              , lineBreak
+              ]
+          , lineBreak
+
+          , text "Lookup an expression"
+          , lineBreak
+          , indent1 . mconcat $
+              [ text "> pl lookup expr \"#B3rh4i\""
+              , lineBreak
+              , text "Resolved full expr hash:"
+              , lineBreak
+              , text " SHA512/B3rh4iGQFySGHtFudSDBeCoxMmvhMPQxnG3fo6Xv9B23vdNUjVvX9u6GgchgGEr3LoTmJZdjXycj3PRzUepEy6RfbyAvQH6FZ52fkyV6uaj9AH6StTY15an3uLZz9mKzRFkgVPo1vJkBmyRZLR4PJRzPttGZvjpkbAnHBZz8iw5kKYo"
+              , lineBreak
+              , text "+0(*) (*) (μ(KIND) (+(*) %))"
+              , lineBreak
+              ]
+          , lineBreak
+
+          , text "Resolve a short hash"
+          , lineBreak
+          , indent1 . mconcat $
+              [ text "> pl resolve expr \"#B3rh4i\""
+              , lineBreak
+              , text "#SHA512/B3rh4iGQFySGHtFudSDBeCoxMmvhMPQxnG3fo6Xv9B23vdNUjVvX9u6GgchgGEr3LoTmJZdjXycj3PRzUepEy6RfbyAvQH6FZ52fkyV6uaj9AH6StTY15an3uLZz9mKzRFkgVPo1vJkBmyRZLR4PJRzPttGZvjpkbAnHBZz8iw5kKYo"
+              , lineBreak
+              ]
+          , lineBreak
+
+          , text "Shorten a long hash"
+          , lineBreak
+          , indent1 . mconcat $
+              [ text "> pl shorten expr \"#SHA512/B3rh4iGQFySGHtFudSDBeCoxMmvhMPQxnG3fo6Xv9B23vdNUjVvX9u6GgchgGEr3LoTmJZdjXycj3PRzUepEy6RfbyAvQH6FZ52fkyV6uaj9AH6StTY15an3uLZz9mKzRFkgVPo1vJkBmyRZLR4PJRzPttGZvjpkbAnHBZz8iw5kKYo\""
+              , lineBreak
+              , text "#B3r"
+              , lineBreak
+              ]
+          , lineBreak
+         ]
+      ]
 
     mkCommand (name, desc, parser) = command name $ info parser (progDesc desc)
 
