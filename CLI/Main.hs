@@ -2,7 +2,9 @@
     FlexibleContexts
   , ImplicitParams
   , OverloadedStrings
+  , GADTs
   , RankNTypes
+  , ScopedTypeVariables
   , TemplateHaskell
   , TypeSynonymInstances
   , FlexibleInstances
@@ -19,6 +21,11 @@ Eventually this should be an entry point to all interaction with the language an
 -}
 module Main where
 
+{- TODO:
+- Any complex repl logic here 'belongs' under the shared Lib to allow sharing
+  with TUI/ web repl which might want some degree of feature parity.
+-}
+
 -- Repl
 import PLRepl.Repl         as PL
 import PLRepl.Repl.Lispy   as Lispy
@@ -27,7 +34,7 @@ import qualified PLReplTUI as TUI
 -- Core PL
 import PL.Binds
 import PL.CodeStore
-import PL.Error
+import qualified PL.Error as PL
 import PL.Expr
 import PL.FixPhase
 import PL.Hash
@@ -70,44 +77,43 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import qualified Options.Applicative as O
 
-
 -- Hardcode the version of the CLI.
 -- TODO: Consider extracting from .cabal file on build
 version :: String
 version = "CLI:0.1.0.0 (Language:0.2.0.0)"
 
 main :: IO ()
-main = parseCommand >>= runCommand
+main = parseCommand >>= runCommand >>= Text.putStr . PLPrinter.render
 
 -- | A Command is an action the CLI should understand how to accept as command
--- line arguments and execute for some result.
-data Command
+-- line arguments and execute for some result type 'r'.
+data Command r where
   -- | Print a version string indicating CLI compatibility.
-  = ShowVersion
+  ShowVersion :: Command Text
 
   -- | Execute the TUI repl.
-  | TerminalREPL
+  TerminalREPL :: Command ()
 
   -- | Resolve an expression short hash to a hash
-  | ResolveExpr ShortHash
+  ResolveExpr :: ShortHash -> Command Hash
   -- | Resolve a type short hash to a hash
-  | ResolveType ShortHash
+  ResolveType :: ShortHash -> Command Hash
   -- | Resolve a kind short hash to a hash
-  | ResolveKind ShortHash
+  ResolveKind :: ShortHash -> Command Hash
 
   -- | Lookup an expression by it's hash
-  | LookupExpr ShortHash
+  LookupExpr :: ShortHash -> Command Expr
   -- | Lookup a type by it's hash
-  | LookupType ShortHash
+  LookupType :: ShortHash -> Command Type
   -- | Lookup a kind by it's hash
-  | LookupKind ShortHash
+  LookupKind :: ShortHash -> Command Kind
 
   -- | Shorten an expr hash to an unambiguous shorthash
-  | ShortenExpr Hash
+  ShortenExpr :: Hash -> Command ShortHash
   -- | Shorten a type hash to an unambiguous shorthash
-  | ShortenType Hash
+  ShortenType :: Hash -> Command ShortHash
   -- | Shorten a kind hash to an unambiguous shorthash
-  | ShortenKind Hash
+  ShortenKind :: Hash -> Command ShortHash
 
   -- The Parse* commands are weird because they take the parsed thing as an
   -- argument. This is because the string->* logic is pushed into the command
@@ -117,27 +123,80 @@ data Command
 
   -- | Parse a textual representation of an expression, checking it is
   -- syntactically valid only.
-  | ParseExpr (ExprFor CommentedPhase)
+  ParseExpr :: ExprFor CommentedPhase -> Command (ExprFor CommentedPhase)
   -- | Parse a textual representation of a type, checking it is
   -- syntactically valid only.
-  | ParseType (TypeFor CommentedPhase)
+  ParseType :: TypeFor CommentedPhase -> Command (TypeFor CommentedPhase)
   -- | Parse a textual representation of a pattern, checking it is
   -- syntactically valid only.
-  | ParsePattern (PatternFor CommentedPhase)
- -- | Parse a textual representation of a kind, checking it is
+  ParsePattern :: PatternFor CommentedPhase -> Command (PatternFor CommentedPhase)
+  -- | Parse a textual representation of a kind, checking it is
   -- syntactically valid only.
-  | ParseKind Kind
+  ParseKind :: Kind -> Command Kind
 
   -- | Type check an expression (which involves first resolving the types of any
   -- referenced content bindings.
-  | TypeCheck Expr
-  deriving Show
+  TypeCheck :: Expr -> Command Type
 
--- | Read and parse command line options into a Command.
-parseCommand :: IO Command
+instance Show (Command r) where
+  show cmd = case cmd of
+    ShowVersion
+      -> "version"
+
+    TerminalREPL
+      -> "repl"
+
+    ResolveExpr _
+      -> "resolve expr"
+
+    ResolveType _
+      -> "resolve type"
+
+    ResolveKind _
+      -> "resolve kind"
+
+    LookupExpr _
+      -> "lookup expr"
+
+    LookupType _
+      -> "lookup type"
+
+    LookupKind _
+      -> "lookup kind"
+
+    ShortenExpr _
+      -> "shorten expr"
+
+    ShortenType _
+      -> "shorten type"
+
+    ShortenKind _
+      -> "shorten kind"
+
+    ParseExpr _
+      -> "parse expr"
+
+    ParseType _
+      -> "parse type"
+
+    ParsePattern _
+      -> "parse pattern"
+
+    ParseKind _
+      -> "parse kind"
+
+    TypeCheck _
+      -> "typecheck"
+
+-- Forget the specific return type of a command, allowing the fact that it is
+-- Printable to be recovered on matches.
+data SomeCommand = forall r. Printable r => SomeCommand (Command r)
+
+-- | Read and parse command line options into SomeCommand.
+parseCommand :: IO SomeCommand
 parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
   where
-    commandParserInfo :: O.ParserInfo Command
+    commandParserInfo :: O.ParserInfo SomeCommand
     commandParserInfo = info (commandParser <**> helper) (progDescDoc $ Just usage)
 
     usage = ANSI.string . Text.unpack . render . mconcat $
@@ -208,10 +267,13 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
          ]
       ]
 
+    -- Convenience function to construct a command from it's name, description
+    -- and parser
+    mkCommand :: (String, String, O.Parser SomeCommand) -> Mod CommandFields SomeCommand
     mkCommand (name, desc, parser) = command name $ info parser (progDesc desc)
 
     -- Top-level commands
-    commandParser :: O.Parser Command
+    commandParser :: O.Parser SomeCommand
     commandParser = hsubparser . mconcat . fmap mkCommand $
       [ terminalRepl
       , version
@@ -224,8 +286,8 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       , typeCheck
       ]
 
-    terminalRepl = ("repl"   , "start a repl to Read, Evaluate, Print (Loop) code", pure TerminalREPL)
-    version      = ("version", "show the version of PL being used",                 pure ShowVersion)
+    terminalRepl = ("repl"   , "start a repl to Read, Evaluate, Print (Loop) code", pure $ SomeCommand TerminalREPL)
+    version      = ("version", "show the version of PL being used",                 pure $ SomeCommand ShowVersion)
 
     -- Sub-commands of lookup
     lookup = ("lookup", "lookup something associated with a hash", hsubparser . mconcat . fmap mkCommand $
@@ -234,9 +296,9 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       , ("kind", "lookup a kind associated with a hash"       , lookupKind)
       ])
      where
-      lookupExpr = LookupExpr <$> (argument readShortHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
-      lookupType = LookupType <$> (argument readShortHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
-      lookupKind = LookupKind <$> (argument readShortHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
+      lookupExpr = SomeCommand . LookupExpr <$> (argument readShortHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
+      lookupType = SomeCommand . LookupType <$> (argument readShortHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
+      lookupKind = SomeCommand . LookupKind <$> (argument readShortHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
 
     -- Sub-commands of resolve
     resolve = ("resolve", "resolve a short hash to an unambiguous long-hash", hsubparser . mconcat . fmap mkCommand $
@@ -245,9 +307,9 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       , ("kind", "resolve a kinds short hash to an unambiguous long-hash"       , resolveKind)
       ])
      where
-      resolveExpr = ResolveExpr <$> (argument readShortHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
-      resolveType = ResolveType <$> (argument readShortHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
-      resolveKind = ResolveKind <$> (argument readShortHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
+      resolveExpr = SomeCommand . ResolveExpr <$> (argument readShortHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
+      resolveType = SomeCommand . ResolveType <$> (argument readShortHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
+      resolveKind = SomeCommand . ResolveKind <$> (argument readShortHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
 
     -- Sub-commands of shorten
     shorten = ("shorten", "shorten a hash to a (currently) unambiguous short-hash", hsubparser . mconcat . fmap mkCommand $
@@ -256,9 +318,9 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       , ("kind", "shorten a kinds hash to a (currently) unambiguous short-hash"       , shortenKind)
       ])
      where
-      shortenExpr = ShortenExpr <$> (argument readHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
-      shortenType = ShortenType <$> (argument readHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
-      shortenKind = ShortenKind <$> (argument readHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
+      shortenExpr = SomeCommand . ShortenExpr <$> (argument readHash $ mconcat [help "Expression hash", metavar "EXPR_HASH"])
+      shortenType = SomeCommand . ShortenType <$> (argument readHash $ mconcat [help "Type hash", metavar "TYPE_HASH"])
+      shortenKind = SomeCommand . ShortenKind <$> (argument readHash $ mconcat [help "Kind hash", metavar "KIND_HASH"])
 
     -- Sub-commands of parse
     parse = ("parse", "parse code, checking that it is syntactically correct only", hsubparser . mconcat . fmap mkCommand $
@@ -267,14 +329,13 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       , ("pattern", "parse a pattern, checking that it is syntactically correct only" , parsePattern)
       , ("kind", "parse a kind, checking that it is syntactically correct only"       , parseKind)
       ])
-
      where
-      parseExpr    = ParseExpr    <$> (argument readCommentedExpr    $ mconcat [help "Expression text", metavar "EXPR_TEXT"])
-      parseType    = ParseType    <$> (argument readCommentedType    $ mconcat [help "Type text", metavar "TYPE_TEXT"])
-      parsePattern = ParsePattern <$> (argument readCommentedPattern $ mconcat [help "Pattern text", metavar "PATTERN_TEXT"])
-      parseKind    = ParseKind    <$> (argument readKind    $ mconcat [help "Kind text", metavar "KIND_TEXT"])
+      parseExpr    = SomeCommand . ParseExpr    <$> (argument readCommentedExpr    $ mconcat [help "Expression text", metavar "EXPR_TEXT"])
+      parseType    = SomeCommand .ParseType    <$> (argument readCommentedType    $ mconcat [help "Type text", metavar "TYPE_TEXT"])
+      parsePattern = SomeCommand .ParsePattern <$> (argument readCommentedPattern $ mconcat [help "Pattern text", metavar "PATTERN_TEXT"])
+      parseKind    = SomeCommand .ParseKind    <$> (argument readKind    $ mconcat [help "Kind text", metavar "KIND_TEXT"])
 
-    typeCheck = ("typecheck", "check an expression is well-typed", TypeCheck <$> (argument readExpr $ mconcat [help "Expression text", metavar "EXPR_TEXT"])) 
+    typeCheck = ("typecheck", "check an expression is well-typed", SomeCommand . TypeCheck <$> (argument readExpr $ mconcat [help "Expression text", metavar "EXPR_TEXT"]))
 
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -285,67 +346,72 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
     typeCtx :: TypeCtx
     typeCtx = sharedTypeCtx
 
+-- Run a command, returning success results as a document to be printed.
+-- Failures will write to stderr an exit with a non-0 status code
+-- Successful operations may log informative messages to stdout if and only if
+-- stdout is an interactive tty.
+runCommand :: SomeCommand -> IO Doc
+runCommand someCmd = case someCmd of
+  SomeCommand cmd
+    -> case cmd of
+          ShowVersion
+            -> pure . ppResult printers . Text.pack $ version
 
-runCommand :: Command -> IO ()
-runCommand cmd = case cmd of
-  ShowVersion
-    -> runShowVersion
+          TerminalREPL
+            -> runTerminalREPL >> pure mempty
 
-  TerminalREPL
-    -> runTerminalREPL
+          -- Lookup short/long hashes associated code
+          LookupExpr shortHash
+            -> ppResult printers <$> runLookupExpr shortHash replCtx
 
-  -- Lookup short/long hashes associated code
-  LookupExpr shortHash
-    -> runLookupExpr shortHash replCtx
+          LookupType shortHash
+            -> ppResult printers <$> runLookupType shortHash replCtx
 
-  LookupType shortHash
-    -> runLookupType shortHash replCtx
+          LookupKind shortHash
+            -> ppResult printers <$> runLookupKind shortHash replCtx
 
-  LookupKind shortHash
-    -> runLookupKind shortHash replCtx
+          -- Resolve short hashes to long hashes
+          ResolveExpr shortHash
+            -> ppResult printers <$> runResolveExpr shortHash replCtx
 
-  -- Resolve short hashes to long hashes
-  ResolveExpr shortHash
-    -> runResolveExpr shortHash replCtx
+          ResolveType shortHash
+            -> ppResult printers <$> runResolveType shortHash replCtx
 
-  ResolveType shortHash
-    -> runResolveType shortHash replCtx
+          ResolveKind shortHash
+            -> ppResult printers <$> runResolveKind shortHash replCtx
 
-  ResolveKind shortHash
-    -> runResolveKind shortHash replCtx
+          -- Shorten long hashes to unambigous short-hashes
+          ShortenExpr hash
+            -> ppResult printers <$> runShortenExpr hash replCtx
 
-  -- Shorten long hashes to unambigous short-hashes
-  ShortenExpr hash
-    -> runShortenExpr hash replCtx
+          ShortenType hash
+            -> ppResult printers <$> runShortenType hash replCtx
 
-  ShortenType hash
-    -> runShortenType hash replCtx
+          ShortenKind hash
+            -> ppResult printers <$> runShortenKind hash replCtx
 
-  ShortenKind hash
-    -> runShortenKind hash replCtx
+          ParseExpr commentedExpr
+            -> pure . ppResult printers $ commentedExpr
 
-  ParseExpr commentedExpr
-    -> runParseExpr commentedExpr replCtx
+          ParseType commentedType
+            -> pure . ppResult printers $ commentedType
 
-  ParseType commentedType
-    -> runParseType commentedType replCtx
+          ParsePattern commentedPattern
+            -> pure . ppResult printers $ commentedPattern
 
-  ParsePattern commentedPattern
-    -> runParsePattern commentedPattern replCtx
+          ParseKind kind
+            -> pure . ppResult printers $ kind
 
-  ParseKind kind
-    -> runParseKind kind replCtx
+          TypeCheck expr
+            -> ppResult printers <$> runTypeCheck expr replCtx
 
-  TypeCheck expr
-    -> runTypeCheck expr replCtx
-
-  cmd
-    -> writeFatalError . EMsg . mconcat $
-         [ text "pl has parsed a command that it does not understand how to execute:"
-         , lineBreak
-         , string . show $ cmd
-         , lineBreak
-         ]
+          cmd
+            -> writeFatalError . PL.EMsg . mconcat $
+                 [ text "pl has parsed a command that it does not understand how to execute:"
+                 , lineBreak
+                 , string . show $ cmd
+                 , lineBreak
+                 ]
   where
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -356,52 +422,39 @@ runCommand cmd = case cmd of
     typeCtx :: TypeCtx
     typeCtx = sharedTypeCtx
 
-runShowVersion :: IO ()
-runShowVersion = putStrLn version
+    printers = lispyPrinters
 
 runTerminalREPL :: IO ()
 runTerminalREPL = TUI.run
 
-runLookupExpr :: ShortHash -> ReplCtx -> IO ()
-runLookupExpr = runLookupFor "expr" replResolveExprHash replLookupExpr Lispy.ppExpr
+runLookupExpr :: ShortHash -> ReplCtx -> IO Expr
+runLookupExpr = runLookupFor "expr" replResolveExprHash replLookupExpr
 
-runLookupType :: ShortHash -> ReplCtx -> IO ()
-runLookupType = runLookupFor "type" replResolveTypeHash replLookupType Lispy.ppType
+runLookupType :: ShortHash -> ReplCtx -> IO Type
+runLookupType = runLookupFor "type" replResolveTypeHash replLookupType
 
-runLookupKind :: ShortHash -> ReplCtx -> IO ()
-runLookupKind = runLookupFor "kind" replResolveKindHash replLookupKind Lispy.ppKind
+runLookupKind :: ShortHash -> ReplCtx -> IO Kind
+runLookupKind = runLookupFor "kind" replResolveKindHash replLookupKind
 
-runResolveExpr :: ShortHash -> ReplCtx -> IO ()
+runResolveExpr :: ShortHash -> ReplCtx -> IO Hash
 runResolveExpr = runResolveFor replResolveExprHash
 
-runResolveType :: ShortHash -> ReplCtx -> IO ()
+runResolveType :: ShortHash -> ReplCtx -> IO Hash
 runResolveType = runResolveFor replResolveTypeHash
 
-runResolveKind :: ShortHash -> ReplCtx -> IO ()
+runResolveKind :: ShortHash -> ReplCtx -> IO Hash
 runResolveKind = runResolveFor replResolveKindHash
 
-runShortenExpr :: Hash -> ReplCtx -> IO ()
+runShortenExpr :: Hash -> ReplCtx -> IO ShortHash
 runShortenExpr = runShortenFor replShortenExprHash
 
-runShortenType :: Hash -> ReplCtx -> IO ()
+runShortenType :: Hash -> ReplCtx -> IO ShortHash
 runShortenType = runShortenFor replShortenTypeHash
 
-runShortenKind :: Hash -> ReplCtx -> IO ()
+runShortenKind :: Hash -> ReplCtx -> IO ShortHash
 runShortenKind = runShortenFor replShortenKindHash
 
-runParseExpr :: ExprFor CommentedPhase -> ReplCtx -> IO ()
-runParseExpr = runParseFor Lispy.ppCommentedExpr
-
-runParseType :: TypeFor CommentedPhase -> ReplCtx -> IO ()
-runParseType = runParseFor Lispy.ppCommentedType
-
-runParsePattern :: PatternFor CommentedPhase -> ReplCtx -> IO ()
-runParsePattern = runParseFor Lispy.ppCommentedPattern
-
-runParseKind :: Kind -> ReplCtx -> IO ()
-runParseKind = runParseFor Lispy.ppKind
-
-runTypeCheck :: Expr -> ReplCtx -> IO ()
+runTypeCheck :: Expr -> ReplCtx -> IO Type
 runTypeCheck expr replCtx = do
   (_replCtx, log, eType) <- runRepl replCtx $ replResolveAndTypeCheck expr
   writeDoc log
@@ -410,13 +463,13 @@ runTypeCheck expr replCtx = do
       -> writeFatalError err
 
     Right typ
-      -> writeDoc . ppType $ typ
+      -> pure typ
 
 -- For a named thing:
 -- - Resolve a short hash into a full hash
 -- - Lookup the thing associated with the full hash
-runLookupFor :: forall a. Text -> (ShortHash -> Repl Hash) -> (Hash -> Repl (Maybe a)) -> (a -> Doc) -> ShortHash -> ReplCtx -> IO ()
-runLookupFor thing resolveF lookupF ppThing shortHash replCtx = do
+runLookupFor :: Text -> (ShortHash -> Repl Hash) -> (Hash -> Repl (Maybe r)) -> ShortHash -> ReplCtx -> IO r
+runLookupFor thing resolveF lookupF shortHash replCtx = do
   (_replCtx, log, eRes) <- runRepl replCtx $ do
     hash <- resolveF shortHash
     replLog . mconcat $ [ text "Resolved full ", text thing, text " hash: "
@@ -434,13 +487,13 @@ runLookupFor thing resolveF lookupF ppThing shortHash replCtx = do
     Right mThing
       -> case mThing of
            Nothing
-             -> writeDoc (text $ "There is no known "<>thing<>" with the given hash")
+             -> writeFatalError (PL.EMsg $ text $ "There is no known "<>thing<>" with the given hash")
 
            Just thing
-             -> writeDoc . ppThing $ thing
+             -> pure thing
 
 -- For a type of short hash, resolve it into a full hash.
-runResolveFor :: (ShortHash -> Repl Hash) -> ShortHash -> ReplCtx -> IO ()
+runResolveFor :: (ShortHash -> Repl Hash) -> ShortHash -> ReplCtx -> IO Hash
 runResolveFor resolveF shortHash replCtx = do
   (_replCtx, log, eRes) <- runRepl replCtx $ resolveF shortHash
   writeDoc log
@@ -449,13 +502,11 @@ runResolveFor resolveF shortHash replCtx = do
       -> writeFatalError err
 
     Right hash
-      -> writeDoc . mconcat $ [ fromMaybe mempty . pprint (toPrinter (PLGrammar.charIs '#' */ Lispy.base58Hash)) $ hash
-                              , lineBreak
-                              ]
+      -> pure hash
 
 -- For a type of long hash, resolve it to the shortest unambiguous hash given
 -- the set of known hashes.
-runShortenFor :: (Hash -> Repl ShortHash) -> Hash -> ReplCtx -> IO ()
+runShortenFor :: (Hash -> Repl ShortHash) -> Hash -> ReplCtx -> IO ShortHash
 runShortenFor shortenF hash replCtx = do
   (_replCtx, log, eRes) <- runRepl replCtx $ shortenF hash
   writeDoc log
@@ -464,15 +515,54 @@ runShortenFor shortenF hash replCtx = do
       -> writeFatalError err
 
     Right shortHash
-      -> writeDoc . mconcat $ [ fromMaybe mempty . pprint (toPrinter (Lispy.shortHash)) $ shortHash
-                              , lineBreak
-                              ]
-
-runParseFor :: (a -> Doc) -> a -> ReplCtx -> IO ()
-runParseFor ppThing thing _replCtx = writeDoc . ppThing $ thing
-
+      -> pure shortHash
 
 {- Internal helper functions -}
+
+lispyPrinters :: Printers
+lispyPrinters = Printers
+  { _ppExpr = Lispy.ppExpr
+  , _ppType = Lispy.ppType
+  , _ppKind = Lispy.ppKind
+  , _ppCommentedExpr = Lispy.ppCommentedExpr
+  , _ppCommentedType = Lispy.ppCommentedType
+  , _ppCommentedPattern = Lispy.ppCommentedPattern
+  , _ppHash = \hash -> fromMaybe mempty . pprint (toPrinter (PLGrammar.charIs '#' */ Lispy.base58Hash)) $ hash
+  , _ppShortHash = \shortHash -> fromMaybe mempty . pprint (toPrinter Lispy.shortHash) $ shortHash
+  }
+
+-- A collection of pretty printers for result types of commands.
+data Printers = Printers
+  { _ppExpr :: Expr -> Doc
+  , _ppType :: Type -> Doc
+  , _ppKind :: Kind -> Doc
+  , _ppCommentedExpr    :: ExprFor CommentedPhase -> Doc
+  , _ppCommentedType    :: TypeFor CommentedPhase -> Doc
+  , _ppCommentedPattern :: PatternFor CommentedPhase -> Doc
+  , _ppHash      :: Hash -> Doc
+  , _ppShortHash :: ShortHash -> Doc
+  }
+
+-- Class of result types that can be printed to a tty.
+--
+-- Like Document, except instead of using a single canonical instance the
+-- ppResult method takes a record of printers to allow switching out specific
+-- syntax used.
+class Printable r where ppResult :: Printers -> r -> Doc
+instance Printable Text where ppResult _ = text
+instance Printable ()   where ppResult _ = mempty
+instance Printable Expr where ppResult = _ppExpr
+instance Printable Type where ppResult = _ppType
+instance Printable Kind where ppResult = _ppKind
+instance Printable (ExprFor CommentedPhase) where ppResult = _ppCommentedExpr
+instance Printable (TypeFor CommentedPhase) where ppResult = _ppCommentedType
+instance Printable (PatternFor CommentedPhase) where ppResult = _ppCommentedPattern
+instance Printable Hash where ppResult = _ppHash
+instance Printable ShortHash where ppResult = _ppShortHash
+
+-- Write a pretty printed result to stdout
+writeResult :: Printable r => Printers -> r -> IO ()
+writeResult printers result = Text.putStr . PLPrinter.render . ppResult printers $ result
 
 -- Write a document to stdout if and only if stdout is connected to an interactive tty, otherwise write nothing.
 writeDoc :: Doc -> IO ()
@@ -482,9 +572,9 @@ writeDoc doc = do
 
 -- Write an Error to stderr using lispy syntax then fail with a non-zero exit
 -- code.
-writeFatalError :: Error -> IO ()
+writeFatalError :: Error -> IO x
 writeFatalError err = do
-  Text.hPutStrLn stderr . PLPrinter.render . mconcat $ [ppError Lispy.ppDefaultError err, lineBreak]
+  Text.hPutStrLn stderr . PLPrinter.render . mconcat $ [PL.ppError Lispy.ppDefaultError err, lineBreak]
   exitFailure
 
 -- Assume hashes are provided in Lispy syntax
