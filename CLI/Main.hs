@@ -127,6 +127,10 @@ data Command
  -- | Parse a textual representation of a kind, checking it is
   -- syntactically valid only.
   | ParseKind Kind
+
+  -- | Type check an expression (which involves first resolving the types of any
+  -- referenced content bindings.
+  | TypeCheck Expr
   deriving Show
 
 -- | Read and parse command line options into a Command.
@@ -217,6 +221,7 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       , shorten
 
       , parse
+      , typeCheck
       ]
 
     terminalRepl = ("repl"   , "start a repl to Read, Evaluate, Print (Loop) code", pure TerminalREPL)
@@ -264,10 +269,12 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       ])
 
      where
-      parseExpr    = ParseExpr    <$> (argument readExpr    $ mconcat [help "Expression text", metavar "EXPR_TEXT"])
-      parseType    = ParseType    <$> (argument readType    $ mconcat [help "Type text", metavar "TYPE_TEXT"])
-      parsePattern = ParsePattern <$> (argument readPattern $ mconcat [help "Pattern text", metavar "PATTERN_TEXT"])
+      parseExpr    = ParseExpr    <$> (argument readCommentedExpr    $ mconcat [help "Expression text", metavar "EXPR_TEXT"])
+      parseType    = ParseType    <$> (argument readCommentedType    $ mconcat [help "Type text", metavar "TYPE_TEXT"])
+      parsePattern = ParsePattern <$> (argument readCommentedPattern $ mconcat [help "Pattern text", metavar "PATTERN_TEXT"])
       parseKind    = ParseKind    <$> (argument readKind    $ mconcat [help "Kind text", metavar "KIND_TEXT"])
+
+    typeCheck = ("typecheck", "check an expression is well-typed", TypeCheck <$> (argument readExpr $ mconcat [help "Expression text", metavar "EXPR_TEXT"])) 
 
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -328,6 +335,9 @@ runCommand cmd = case cmd of
 
   ParseKind kind
     -> runParseKind kind replCtx
+
+  TypeCheck expr
+    -> runTypeCheck expr replCtx
   where
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -382,6 +392,17 @@ runParsePattern = runParseFor Lispy.ppCommentedPattern
 
 runParseKind :: Kind -> ReplCtx -> IO ()
 runParseKind = runParseFor Lispy.ppKind
+
+runTypeCheck :: Expr -> ReplCtx -> IO ()
+runTypeCheck expr replCtx = do
+  (_replCtx, log, eType) <- runRepl replCtx $ replResolveAndTypeCheck expr
+  writeDoc log
+  case eType of
+    Left err
+      -> writeFatalError err
+
+    Right typ
+      -> writeDoc . ppType $ typ
 
 -- For a named thing:
 -- - Resolve a short hash into a full hash
@@ -468,17 +489,20 @@ readShortHash = readGrammar Lispy.shortHash
 readHash :: ReadM Hash
 readHash = readGrammar (PLGrammar.charIs '#' */ Lispy.base58Hash)
 
-readExpr :: ReadM (ExprFor CommentedPhase)
-readExpr = readGrammar Lispy.commentedExprGrammar
+readCommentedExpr :: ReadM (ExprFor CommentedPhase)
+readCommentedExpr = readGrammar Lispy.commentedExprGrammar
 
-readType :: ReadM (TypeFor CommentedPhase)
-readType = readGrammar Lispy.commentedTypeGrammar
+readCommentedType :: ReadM (TypeFor CommentedPhase)
+readCommentedType = readGrammar Lispy.commentedTypeGrammar
 
-readPattern :: ReadM (PatternFor CommentedPhase)
-readPattern = readGrammar Lispy.commentedPatternGrammar
+readCommentedPattern :: ReadM (PatternFor CommentedPhase)
+readCommentedPattern = readGrammar Lispy.commentedPatternGrammar
 
 readKind :: ReadM Kind
 readKind = readGrammar PLLispy.kind
+
+readExpr :: ReadM Expr
+readExpr = readGrammar Lispy.exprGrammar
 
 -- Use a Grammar to read an argument type
 readGrammar :: Grammar a -> ReadM a
