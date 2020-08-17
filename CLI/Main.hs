@@ -134,6 +134,9 @@ data Command r where
   -- syntactically valid only.
   ParseKind :: Kind -> Command Kind
 
+  -- | A full read, resolve, type check, reduce, evaluate, store pipeline
+  Eval :: Text -> Command Expr
+
   -- | Type check an expression (which involves first resolving the types of any
   -- referenced content bindings.
   TypeCheck :: Expr -> Command Type
@@ -184,6 +187,9 @@ instance Show (Command r) where
 
     ParseKind _
       -> "parse kind"
+
+    Eval _
+      -> "eval"
 
     TypeCheck _
       -> "typecheck"
@@ -283,6 +289,7 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       , shorten
 
       , parse
+      , eval
       , typeCheck
       ]
 
@@ -331,9 +338,13 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
       ])
      where
       parseExpr    = SomeCommand . ParseExpr    <$> (argument readCommentedExpr    $ mconcat [help "Expression text", metavar "EXPR_TEXT"])
-      parseType    = SomeCommand .ParseType    <$> (argument readCommentedType    $ mconcat [help "Type text", metavar "TYPE_TEXT"])
-      parsePattern = SomeCommand .ParsePattern <$> (argument readCommentedPattern $ mconcat [help "Pattern text", metavar "PATTERN_TEXT"])
-      parseKind    = SomeCommand .ParseKind    <$> (argument readKind    $ mconcat [help "Kind text", metavar "KIND_TEXT"])
+      parseType    = SomeCommand . ParseType    <$> (argument readCommentedType    $ mconcat [help "Type text", metavar "TYPE_TEXT"])
+      parsePattern = SomeCommand . ParsePattern <$> (argument readCommentedPattern $ mconcat [help "Pattern text", metavar "PATTERN_TEXT"])
+      parseKind    = SomeCommand . ParseKind    <$> (argument readKind    $ mconcat [help "Kind text", metavar "KIND_TEXT"])
+
+    eval = ("eval", "fully evaluate, type check and store an expression", evalExpr)
+     where
+      evalExpr = SomeCommand . Eval <$> (argument readText $ mconcat [help "Expression text", metavar "EXPR_TEXT"])
 
     typeCheck = ("typecheck", "check an expression is well-typed", SomeCommand . TypeCheck <$> (argument readExpr $ mconcat [help "Expression text", metavar "EXPR_TEXT"]))
 
@@ -402,6 +413,22 @@ runCommand someCmd = case someCmd of
           ParseKind kind
             -> pure . ppResult printers $ kind
 
+          -- Hijack the SimpleRepl to read, resolve, typecheck, reduce, eval and
+          -- store an expression.
+          --
+          -- The final result is currently a not-particularly usefull Doc
+          -- claiming success rather than the expected expr. This indicates the
+          -- SimpleRepl abstraction needs work/ removing/ not using here.
+          Eval exprText
+            -> do (log, eRes) <- step' simpleRepl exprText
+                  writeDoc log
+                  case eRes of
+                    Left err
+                      -> writeFatalError err
+
+                    Right (resDoc, _simpleRepl')
+                      -> pure . ppResult printers $ resDoc
+
           TypeCheck expr
             -> ppResult printers <$> tryRunRepl replCtx (replResolveAndTypeCheck expr)
 
@@ -417,14 +444,17 @@ runCommand someCmd = case someCmd of
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
     -- Lib
     replCtx :: ReplCtx
-    replCtx = mkReplCtx typeCtx TUI.codeStore
+    replCtx = mkReplCtx typeCtx codeStore
 
     typeCtx :: TypeCtx
     typeCtx = sharedTypeCtx
 
+    codeStore = TUI.codeStore
+
     printers = lispyPrinters
 
-
+    simpleRepl :: SimpleRepl
+    simpleRepl = lispyExprRepl codeStore
 
 {- Internal helper functions -}
 
@@ -492,6 +522,7 @@ data Printers = Printers
 class Printable r where ppResult :: Printers -> r -> Doc
 instance Printable Text where ppResult _ = text
 instance Printable ()   where ppResult _ = mempty
+instance Printable Doc  where ppResult _ = id
 instance Printable Expr where ppResult = _ppExpr
 instance Printable Type where ppResult = _ppType
 instance Printable Kind where ppResult = _ppKind
@@ -521,6 +552,9 @@ writeFatalError err = do
 -- Assume hashes are provided in Lispy syntax
 parseShortHash :: String -> Repl ShortHash
 parseShortHash shortHashString = plGrammarParser Lispy.shortHash $ Text.pack shortHashString
+
+readText :: ReadM Text
+readText = Text.pack <$> readerAsk
 
 readShortHash :: ReadM ShortHash
 readShortHash = readGrammar Lispy.shortHash

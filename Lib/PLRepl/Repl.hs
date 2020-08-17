@@ -47,6 +47,7 @@ module PLRepl.Repl
   , SimpleRepl ()
   , mkSimpleRepl
   , step
+  , step'
   , simpleReplCtx
 
   -- * Definition API
@@ -228,6 +229,22 @@ step (SimpleRepl readEval print ctx) txt = do
 
     Right _
       -> pure . (log <> lineBreak <> print res,) . Right $ SimpleRepl readEval print ctx'
+
+-- | 'step' but the final result is printed and returned as a value rather than
+-- being concatenated to the log.
+step'
+  :: SimpleRepl
+  -> Text
+  -> IO (Doc, Either Error (Doc, SimpleRepl))
+step' (SimpleRepl readEval print ctx) txt = do
+  (ctx',log,eRes) <- runRepl ctx $ readEval txt
+  case eRes of
+    Left err
+      -> pure . (log,) . Left $ err
+
+    Right _
+      -> pure . (log,) . Right $ (print eRes, SimpleRepl readEval print ctx')
+
 
 -- | Context Repl's execute under.
 --

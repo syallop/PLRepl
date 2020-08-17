@@ -48,6 +48,8 @@ module PLRepl.Repl.Lispy
   , ppTyVar
 
   , ppParseResult
+
+  , Stripped
   )
   where
 
