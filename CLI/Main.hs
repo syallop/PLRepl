@@ -358,37 +358,37 @@ runCommand someCmd = case someCmd of
             -> pure . ppResult printers . Text.pack $ version
 
           TerminalREPL
-            -> runTerminalREPL >> pure mempty
+            -> TUI.run >> pure mempty
 
           -- Lookup short/long hashes associated code
           LookupExpr shortHash
-            -> ppResult printers <$> runLookupExpr shortHash replCtx
+            -> ppResult printers <$> runLookupFor "expr" (replResolveExprHash shortHash) replLookupExpr replCtx
 
           LookupType shortHash
-            -> ppResult printers <$> runLookupType shortHash replCtx
+            -> ppResult printers <$> runLookupFor "type" (replResolveTypeHash shortHash) replLookupType replCtx
 
           LookupKind shortHash
-            -> ppResult printers <$> runLookupKind shortHash replCtx
+            -> ppResult printers <$> runLookupFor "kind" (replResolveKindHash shortHash) replLookupKind replCtx
 
           -- Resolve short hashes to long hashes
           ResolveExpr shortHash
-            -> ppResult printers <$> runResolveExpr shortHash replCtx
+            -> ppResult printers <$> tryRunRepl replCtx (replResolveExprHash shortHash)
 
           ResolveType shortHash
-            -> ppResult printers <$> runResolveType shortHash replCtx
+            -> ppResult printers <$> tryRunRepl replCtx (replResolveTypeHash shortHash)
 
           ResolveKind shortHash
-            -> ppResult printers <$> runResolveKind shortHash replCtx
+            -> ppResult printers <$> tryRunRepl replCtx (replResolveKindHash shortHash)
 
           -- Shorten long hashes to unambigous short-hashes
           ShortenExpr hash
-            -> ppResult printers <$> runShortenExpr hash replCtx
+            -> ppResult printers <$> tryRunRepl replCtx (replShortenExprHash hash)
 
           ShortenType hash
-            -> ppResult printers <$> runShortenType hash replCtx
+            -> ppResult printers <$> tryRunRepl replCtx (replShortenTypeHash hash)
 
           ShortenKind hash
-            -> ppResult printers <$> runShortenKind hash replCtx
+            -> ppResult printers <$> tryRunRepl replCtx (replShortenKindHash hash)
 
           ParseExpr commentedExpr
             -> pure . ppResult printers $ commentedExpr
@@ -403,7 +403,7 @@ runCommand someCmd = case someCmd of
             -> pure . ppResult printers $ kind
 
           TypeCheck expr
-            -> ppResult printers <$> runTypeCheck expr replCtx
+            -> ppResult printers <$> tryRunRepl replCtx (replResolveAndTypeCheck expr)
 
           cmd
             -> writeFatalError . PL.EMsg . mconcat $
@@ -424,100 +424,41 @@ runCommand someCmd = case someCmd of
 
     printers = lispyPrinters
 
-runTerminalREPL :: IO ()
-runTerminalREPL = TUI.run
 
-runLookupExpr :: ShortHash -> ReplCtx -> IO Expr
-runLookupExpr = runLookupFor "expr" replResolveExprHash replLookupExpr
 
-runLookupType :: ShortHash -> ReplCtx -> IO Type
-runLookupType = runLookupFor "type" replResolveTypeHash replLookupType
-
-runLookupKind :: ShortHash -> ReplCtx -> IO Kind
-runLookupKind = runLookupFor "kind" replResolveKindHash replLookupKind
-
-runResolveExpr :: ShortHash -> ReplCtx -> IO Hash
-runResolveExpr = runResolveFor replResolveExprHash
-
-runResolveType :: ShortHash -> ReplCtx -> IO Hash
-runResolveType = runResolveFor replResolveTypeHash
-
-runResolveKind :: ShortHash -> ReplCtx -> IO Hash
-runResolveKind = runResolveFor replResolveKindHash
-
-runShortenExpr :: Hash -> ReplCtx -> IO ShortHash
-runShortenExpr = runShortenFor replShortenExprHash
-
-runShortenType :: Hash -> ReplCtx -> IO ShortHash
-runShortenType = runShortenFor replShortenTypeHash
-
-runShortenKind :: Hash -> ReplCtx -> IO ShortHash
-runShortenKind = runShortenFor replShortenKindHash
-
-runTypeCheck :: Expr -> ReplCtx -> IO Type
-runTypeCheck expr replCtx = do
-  (_replCtx, log, eType) <- runRepl replCtx $ replResolveAndTypeCheck expr
-  writeDoc log
-  case eType of
-    Left err
-      -> writeFatalError err
-
-    Right typ
-      -> pure typ
+{- Internal helper functions -}
 
 -- For a named thing:
 -- - Resolve a short hash into a full hash
 -- - Lookup the thing associated with the full hash
-runLookupFor :: Text -> (ShortHash -> Repl Hash) -> (Hash -> Repl (Maybe r)) -> ShortHash -> ReplCtx -> IO r
-runLookupFor thing resolveF lookupF shortHash replCtx = do
-  (_replCtx, log, eRes) <- runRepl replCtx $ do
-    hash <- resolveF shortHash
+runLookupFor :: Text -> Repl Hash -> (Hash -> Repl (Maybe r)) -> ReplCtx -> IO r
+runLookupFor thing resolve lookup replCtx = tryRunRepl replCtx $ do
+    hash <- resolve
     replLog . mconcat $ [ text "Resolved full ", text thing, text " hash: "
                         , lineBreak
                         , indent1 $ string . show $ hash
                         , lineBreak
                         ]
-    lookupF hash
+    mThing <- lookup hash
+    case mThing of
+      Nothing
+        -> replError $ PL.EMsg $ text $ "There is no known "<>thing<>" with the given hash"
 
+      Just thing
+        -> pure thing
+
+-- Attempt to run a repl function calling exitFailure if an error is encountered
+-- and only writing logs to stdout if it is an interactive tty.
+tryRunRepl :: ReplCtx -> Repl a -> IO a
+tryRunRepl replCtx repl = do
+  (_replCtx, log, eRes) <- runRepl replCtx repl
   writeDoc log
   case eRes of
     Left err
       -> writeFatalError err
 
-    Right mThing
-      -> case mThing of
-           Nothing
-             -> writeFatalError (PL.EMsg $ text $ "There is no known "<>thing<>" with the given hash")
-
-           Just thing
-             -> pure thing
-
--- For a type of short hash, resolve it into a full hash.
-runResolveFor :: (ShortHash -> Repl Hash) -> ShortHash -> ReplCtx -> IO Hash
-runResolveFor resolveF shortHash replCtx = do
-  (_replCtx, log, eRes) <- runRepl replCtx $ resolveF shortHash
-  writeDoc log
-  case eRes of
-    Left err
-      -> writeFatalError err
-
-    Right hash
-      -> pure hash
-
--- For a type of long hash, resolve it to the shortest unambiguous hash given
--- the set of known hashes.
-runShortenFor :: (Hash -> Repl ShortHash) -> Hash -> ReplCtx -> IO ShortHash
-runShortenFor shortenF hash replCtx = do
-  (_replCtx, log, eRes) <- runRepl replCtx $ shortenF hash
-  writeDoc log
-  case eRes of
-    Left err
-      -> writeFatalError err
-
-    Right shortHash
-      -> pure shortHash
-
-{- Internal helper functions -}
+    Right res
+      -> pure res
 
 lispyPrinters :: Printers
 lispyPrinters = Printers
