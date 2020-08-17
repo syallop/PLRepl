@@ -35,6 +35,7 @@ import PL.HashStore
 import PL.Kind
 import PL.Serialize
 import PL.Store
+import PL.Pattern
 import PL.Commented
 import PL.Store.File
 import PL.Store.Memory
@@ -120,6 +121,9 @@ data Command
   -- | Parse a textual representation of a type, checking it is
   -- syntactically valid only.
   | ParseType (TypeFor CommentedPhase)
+  -- | Parse a textual representation of a pattern, checking it is
+  -- syntactically valid only.
+  | ParsePattern (PatternFor CommentedPhase)
  -- | Parse a textual representation of a kind, checking it is
   -- syntactically valid only.
   | ParseKind Kind
@@ -255,13 +259,15 @@ parseCommand = customExecParser (prefs showHelpOnError) commandParserInfo
     parse = ("parse", "parse code, checking that it is syntactically correct only", hsubparser . mconcat . fmap mkCommand $
       [ ("expr", "parse an expression, checking that it is syntactically correct only", parseExpr)
       , ("type", "parse a type, checking that it is syntactically correct only"       , parseType)
+      , ("pattern", "parse a pattern, checking that it is syntactically correct only" , parsePattern)
       , ("kind", "parse a kind, checking that it is syntactically correct only"       , parseKind)
       ])
 
      where
-      parseExpr = ParseExpr <$> (argument readExpr $ mconcat [help "Expression text", metavar "EXPR_TEXT"])
-      parseType = ParseType <$> (argument readType $ mconcat [help "Type text", metavar "TYPE_TEXT"])
-      parseKind = ParseKind <$> (argument readKind $ mconcat [help "Kind text", metavar "KIND_TEXT"])
+      parseExpr    = ParseExpr    <$> (argument readExpr    $ mconcat [help "Expression text", metavar "EXPR_TEXT"])
+      parseType    = ParseType    <$> (argument readType    $ mconcat [help "Type text", metavar "TYPE_TEXT"])
+      parsePattern = ParsePattern <$> (argument readPattern $ mconcat [help "Pattern text", metavar "PATTERN_TEXT"])
+      parseKind    = ParseKind    <$> (argument readKind    $ mconcat [help "Kind text", metavar "KIND_TEXT"])
 
     -- Build a replctx by hijacking the codestore used in the TUI.
     -- TODO: TUI should accept a codestore as an argument/ this logic belongs in
@@ -317,6 +323,9 @@ runCommand cmd = case cmd of
   ParseType commentedType
     -> runParseType commentedType replCtx
 
+  ParsePattern commentedPattern
+    -> runParsePattern commentedPattern replCtx
+
   ParseKind kind
     -> runParseKind kind replCtx
   where
@@ -367,6 +376,9 @@ runParseExpr = runParseFor Lispy.ppCommentedExpr
 
 runParseType :: TypeFor CommentedPhase -> ReplCtx -> IO ()
 runParseType = runParseFor Lispy.ppCommentedType
+
+runParsePattern :: PatternFor CommentedPhase -> ReplCtx -> IO ()
+runParsePattern = runParseFor Lispy.ppCommentedPattern
 
 runParseKind :: Kind -> ReplCtx -> IO ()
 runParseKind = runParseFor Lispy.ppKind
@@ -461,6 +473,9 @@ readExpr = readGrammar Lispy.commentedExprGrammar
 
 readType :: ReadM (TypeFor CommentedPhase)
 readType = readGrammar Lispy.commentedTypeGrammar
+
+readPattern :: ReadM (PatternFor CommentedPhase)
+readPattern = readGrammar Lispy.commentedPatternGrammar
 
 readKind :: ReadM Kind
 readKind = readGrammar PLLispy.kind
