@@ -50,76 +50,79 @@ module PLReplTUI
   )
   where
 
+-- Repl
 import PLRepl.Repl          as PL
 import PLRepl.Repl.Lispy    as PL
 import PLRepl.Widgets.Event as PL
 import PLRepl.Widgets.Name  as PL
 import PLRepl.Widgets.State as PL
 
+-- Core PL
+import PL.Store.Code
+import PL.Commented
+import PL.Error
+import PL.Expr
+import PL.Kind
+import PL.Name
+import PL.Serialize
+import PL.Test.Source
+import PL.TyVar
+import PL.Type hiding (void)
+import PL.TypeCtx
+import PL.Var
+import qualified PL.Test.Expr as Test
+import qualified PL.Test.ExprTestCase as Test
+
+-- PL Store
+import PLStore
+import PLStore.Hash
+import PLStore.File
+import PLStore.Memory
+import PLStore.Nested
+
+-- Other PL
+import PLHash
+import PLGrammar
 import PLLispy
 import PLLispy.Expr
 import PLLispy.Level
-import PL.Hash
-import PL.HashStore
-import PL.CodeStore
-import PL.TyVar
-import PL.Expr
-import PL.Commented
-import PL.Type hiding (void)
-import PL.Var
-import PL.HashStore
-import PL.Serialize
-import PL.Store
-import PL.Store.Nested
-import PL.Store.File
-import PL.Store.Memory
-import PL.Error
-import PL.TypeCtx
-import PL.Kind
-import PL.Name
-
-import PL.Test.Source
-import qualified PL.Test.Expr as Test
-import qualified PL.Test.ExprTestCase as Test
-import qualified PLLispy.Test.Sources.Expr as Test
-
-import PLGrammar
-import Reversible.Iso
+import PLPrinter
+import PLPrinter.Doc
 import Reversible
-
-import qualified PLParser as PLParser
-import qualified PLPrinter as PLPrinter
+import Reversible.Iso
+import qualified PLEditor as E
 import qualified PLGrammar as G
 import qualified PLLispy as L
 import qualified PLLispy.Level as L
-import PLPrinter
-import PLPrinter.Doc
+import qualified PLLispy.Test.Sources.Expr as Test
+import qualified PLParser as PLParser
+import qualified PLPrinter as PLPrinter
 
-import qualified PLEditor as E
-
+-- Brick
 import Brick hiding (App)
 import Brick.BChan
 import Brick.Widgets.Border
 import Brick.Widgets.Border.Style
 import Brick.Widgets.Center
-import qualified Graphics.Vty as Vty
 import qualified Brick as Brick
+import qualified Graphics.Vty as Vty
 
-import Control.Concurrent (threadDelay, forkIO, forkFinally)
+-- Other
 import Control.Arrow (first)
+import Control.Concurrent (threadDelay, forkIO, forkFinally)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.State.Lazy
 import Data.List (isPrefixOf)
+import Data.Map (Map)
+import Data.Maybe
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import System.Directory
 import System.Exit
-import qualified Data.Text as Text
-import Data.Map (Map)
-import qualified Data.Map as Map
 import System.Random
-import Data.Maybe
+import qualified Data.Map as Map
+import qualified Data.Text as Text
 
 -- | The ReplApp is a Brick App which handles `Events` to update `State`
 -- making use of `Name`'s to name resources.

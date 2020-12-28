@@ -9,23 +9,44 @@ packages:
 - ./CLI
 extra-deps:
 - git: https://github.com/syallop/PLCore
-  commit: aeb09392e2f97be382273fc8fe3600f8a3efa64b
+  commit: 359f517d0d467b78b5376090810419b8a0597bed
+
+- git: https://github.com/syallop/PLHash
+  commit: 8b2c8d586f55813851740dc64e24677db42eef77
+
 - git: https://github.com/syallop/PLEditor
   commit: eca85a4b7a0df4400e795e32a89ecbaa756c6567
+
 - git: https://github.com/syallop/PLLispy
-  commit: 3938c0d737731f1fa9f51db37369761b7d87b348
+  commit: 88248687cd255c118622a458e20435131c81c59f
+
 - git: https://github.com/syallop/PLParser
   commit: 8da016b4bcd88055fec656de0fbfa52f2087562b
+
 - git: https://github.com/syallop/PLGrammar
   commit: ece33dda877ed6b2199ebc6528fdc825302b3978
+
 - git: https://github.com/syallop/PLPrinter
   commit: 29c1fc4fe5f33086bed4855e016aa56aa80264af
+
 - git: https://github.com/syallop/Reversible
   commit: 84188a89af962716dc0534d552da715305cb0cf5
+
 - git: https://github.com/syallop/PLLabel
   commit: 678354d723effe569aae83623d25191c25e219a0
+
+- git: https://github.com/syallop/PLStore
+  commit: 3406f7f2e6eb15c83eebb689a08b871f21c2c0d3
+  subdirs:
+    - Store
+    - File
+    - Hash
+    - Memory
+    - Nested
+
 - git: https://github.com/syallop/DSL-Compose.git
   commit: 5a95ae855f3291aa3193a7424892035226b10d2f
+
 - git: https://github.com/rootmos/haskeline.git
   commit: bf8164bc747e299524548417f3e947cbd3d47f68
 - megaparsec-8.0.0

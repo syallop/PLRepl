@@ -53,33 +53,42 @@ module PLRepl.Repl.Lispy
   )
   where
 
+-- PL Repl
+import PLRepl.Repl
+
+-- Core PL
 import PL.Binds
+import PL.Store.Code
 import PL.Commented
-import PL.Pattern
-import PL.TypeCtx
 import PL.Error
 import PL.Expr
-import PL.Hash
-import PL.Kind
-import PL.TyVar
 import PL.FixPhase
-import PL.Type
-import PL.Var
-import PL.Test.Shared
-import PL.HashStore
+import PL.Kind
+import PL.Pattern
 import PL.Serialize
+import PL.Test.Shared
+import PL.TyVar
+import PL.Type
+import PL.TypeCtx
+import PL.Var
+
+-- Other PL
 import PLGrammar
+import PLHash
 import PLLispy
-import PLLispy.Name
 import PLLispy.Level
+import PLLispy.Name
 import PLParser
 import PLParser.Cursor
-import PL.Store
 import PLPrinter
-import PL.CodeStore
-import PLRepl.Repl
+import PLStore
+import PLStore.Hash
+import Reversible
+import Reversible.Iso
+import qualified PLGrammar as G
 import qualified PLParser as PLParser
 
+-- Other
 import Data.Maybe
 import Data.Monoid
 import Data.Set (Set)
@@ -92,10 +101,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 
 import Control.Applicative
-import Reversible
-import Reversible.Iso
 import qualified Control.Monad.Combinators.Expr as Mega
-import qualified PLGrammar as G
 import qualified Text.Megaparsec as Mega
 import qualified Text.Megaparsec.Char as Mega
 
@@ -820,14 +826,14 @@ instance Serialize Expr where
   deserialize bs = case PLParser.runParser (toParser exprGrammar) $ decodeUtf8 bs of
     PLParser.ParseFailure _expected _cursor
       -- TODO: Propagate expected and cursor into error message
-      -> Left . EMsg . text $ "Failed to deserialize expression"
+      -> Left . text $ "Failed to deserialize expression"
 
     PLParser.ParseSuccess expr cursor
       | noTrailingCharacters $ PLParser.remainder cursor
       -> Right expr
 
       | otherwise
-      -> Left . EMsg . mconcat $
+      -> Left . mconcat $
            [ text "Parsed expression:"
            , lineBreak
            , fromMaybe mempty . pprint (toPrinter exprGrammar) $ expr
@@ -853,13 +859,13 @@ instance Serialize (ExprFor CommentedPhase) where
   -- is unsuccessful.
   deserialize bs = case PLParser.runParser (toParser commentedExprGrammar) $ decodeUtf8 bs of
     PLParser.ParseFailure _expected _cursor
-      -> Left . EMsg . text $ "Failed to deserialize expression"
+      -> Left . text $ "Failed to deserialize expression"
     PLParser.ParseSuccess expr cursor
       | noTrailingCharacters $ PLParser.remainder cursor
       -> Right expr
 
       | otherwise
-      -> Left . EMsg . text $ "Failed to deserialize expression as there were unexpected trailing characters"
+      -> Left . text $ "Failed to deserialize expression as there were unexpected trailing characters"
     where
       noTrailingCharacters :: Text -> Bool
       noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
@@ -877,14 +883,14 @@ instance Serialize Type where
   deserialize bs = case PLParser.runParser (toParser typeGrammar) $ decodeUtf8 bs of
     PLParser.ParseFailure _expected _cursor
       -- TODO: Propagate expected and cursor into error message
-      -> Left . EMsg . text $ "Failed to deserialize type"
+      -> Left . text $ "Failed to deserialize type"
 
     PLParser.ParseSuccess typ cursor
       | noTrailingCharacters $ PLParser.remainder cursor
       -> Right typ
 
       | otherwise
-      -> Left . EMsg . text $ "Failed to deserialize type as there were unexpected trailing characters"
+      -> Left . text $ "Failed to deserialize type as there were unexpected trailing characters"
     where
       noTrailingCharacters :: Text -> Bool
       noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
@@ -902,14 +908,14 @@ instance Serialize (TypeFor CommentedPhase) where
   deserialize bs = case PLParser.runParser (toParser commentedTypeGrammar) $ decodeUtf8 bs of
     PLParser.ParseFailure _expected _cursor
       -- TODO: Propagate expected and cursor into error message
-      -> Left . EMsg . text $ "Failed to deserialize type"
+      -> Left . text $ "Failed to deserialize type"
 
     PLParser.ParseSuccess typ cursor
       | noTrailingCharacters $ PLParser.remainder cursor
       -> Right typ
 
       | otherwise
-      -> Left . EMsg . text $ "Failed to deserialize type as there were unexpected trailing characters"
+      -> Left . text $ "Failed to deserialize type as there were unexpected trailing characters"
     where
       noTrailingCharacters :: Text -> Bool
       noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt
@@ -927,14 +933,14 @@ instance Serialize Kind where
   deserialize bs = case PLParser.runParser (toParser kind) $ decodeUtf8 bs of
     PLParser.ParseFailure _expected _cursor
       -- TODO: Propagate expected and cursor into error message
-      -> Left . EMsg . text $ "Failed to deserialize kind"
+      -> Left . text $ "Failed to deserialize kind"
 
     PLParser.ParseSuccess kind cursor
       | noTrailingCharacters $ PLParser.remainder cursor
       -> Right kind
 
       | otherwise
-      -> Left . EMsg . text $ "Failed to deserialize kind as there were unexpected trailing characters"
+      -> Left . text $ "Failed to deserialize kind as there were unexpected trailing characters"
     where
       noTrailingCharacters :: Text -> Bool
       noTrailingCharacters txt = Text.null txt || Text.all (`elem` [' ','\t','\n','\r']) txt

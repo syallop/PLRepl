@@ -31,40 +31,42 @@ module PLRepl.Widgets.State
   )
   where
 
+-- PLRepl
+import PLRepl.Repl
+import PLRepl.Repl.Lispy
 import PLRepl.Widgets.Editor.State
 import PLRepl.Widgets.Name
 import PLRepl.Widgets.Output.State
 import PLRepl.Widgets.TypeCtx.State
 import PLRepl.Widgets.Usage.State
 
-import PLRepl.Repl
-import PLRepl.Repl.Lispy
-
-import PL.Expr
+-- Core PL
+import PL.Store.Code
 import PL.Commented
+import PL.Expr
+import PL.FixPhase
+import PL.Test.Shared
 import PL.TyVar
 import PL.Type
-import PL.Store
-import PL.Hash
-import PL.HashStore
-import PL.TypeCtx
-import PL.CodeStore
-import PL.FixPhase
-import PL.Var
 import PL.TypeCheck
-import PL.Test.Shared
+import PL.TypeCtx
+import PL.Var
 
+-- Other PL
+import PLHash
 import PLLispy
-import PLLispy.Name
 import PLLispy.Level
+import PLLispy.Name
+import PLStore
+import PLStore.Hash
 
 import Reversible
-
 import qualified PLGrammar as G
 
 import PLPrinter
 import qualified PLEditor as E
 
+-- Other
 import Data.Maybe
 import qualified Data.Text as Text
 

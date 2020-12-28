@@ -142,31 +142,34 @@ module PLRepl.Repl
   )
   where
 
+-- Core PL
 import PL.Binds
 import PL.Error
 import PL.Evaluate
 import PL.Expr
-import PL.Hash
+import PL.FixPhase
 import PL.Kind
 import PL.Name
 import PL.Pattern
 import PL.Reduce
 import PL.ReduceType
-import PL.Store
-import PL.HashStore
+import PL.Resolve
 import PL.TyVar
-import PL.FixPhase
 import PL.Type
 import PL.Type.Eq
 import PL.TypeCheck
 import PL.TypeCtx
-import PL.Resolve
-import qualified PL.CodeStore as CodeStore
+import qualified PL.Store.Code as CodeStore
 
+-- Other PL
+import PLHash
+import PLStore
+import PLStore.Hash
 import qualified PLParser as PLParser
 import PLPrinter
 import PLGrammar
 
+-- Other
 import Control.Monad
 import Data.Foldable
 import Data.List (intercalate,intersperse)

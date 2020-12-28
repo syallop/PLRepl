@@ -22,6 +22,14 @@ executable pl
                      , PLLispy    >= 0.3
                      , PLParser   >= 0.1
                      , PLPrinter  >= 0.3
+                     , PLHash
+
+                     , PLStore
+                     , PLStore-Nested
+                     , PLStore-Memory
+                     , PLStore-File
+                     , PLStore-Hash
+
                      , Reversible >= 0.1
 
                      , containers

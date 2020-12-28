@@ -33,20 +33,14 @@ import qualified PLReplTUI as TUI
 
 -- Core PL
 import PL.Binds
-import PL.CodeStore
+import PL.Store.Code
 import qualified PL.Error as PL
 import PL.Expr
 import PL.FixPhase
-import PL.Hash
-import PL.HashStore
 import PL.Kind
 import PL.Serialize
-import PL.Store
 import PL.Pattern
 import PL.Commented
-import PL.Store.File
-import PL.Store.Memory
-import PL.Store.Nested
 import PL.Test.Shared (sharedTypeCtx)
 import PL.Type hiding (void)
 import PL.TypeCtx
@@ -54,11 +48,17 @@ import PL.Var
 
 -- Other PL
 import PLGrammar
-import PLPrinter
+import PLHash
+import PLLispy
 import PLParser
+import PLPrinter
+import PLStore
+import PLStore.File
+import PLStore.Hash
+import PLStore.Memory
+import PLStore.Nested
 import Reversible
 import Reversible.Iso
-import PLLispy
 import qualified PLLispy.Name as Lispy
 
 -- External

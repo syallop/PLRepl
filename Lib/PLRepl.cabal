@@ -18,6 +18,9 @@ library
                      , PLLispy    >= 0.2
                      , PLParser   >= 0.1
                      , PLPrinter  >= 0.3
+                     , PLStore
+                     , PLStore-Hash
+                     , PLHash
                      , Reversible >= 0.1
 
                      , containers
