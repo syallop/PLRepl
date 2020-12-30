@@ -29,17 +29,21 @@ module PLReplJS.LocalStorage
   )
   where
 
+-- JS
 import qualified JavaScript.Web.Storage as JS
 import qualified Data.JSString as JS
 import qualified GHCJS.Types as JS
 import qualified GHCJS.Marshal as JS
 import qualified GHCJS.Foreign as JS
 
-import PL.Store
+-- Core PL
 import PL.Serialize
-import PL.Store.File.Path
 import PL.Error
-import PL.ShortStore
+
+-- Other PL
+import PLStore
+import PLStore.Short
+import PLStore.File.Path
 import PLPrinter.Doc
 
 import Data.Text (Text)
@@ -53,7 +57,7 @@ data LocalStorageStore k v = LocalStorageStore
   { _namespaces          :: [Text]
   , _keyPattern          :: PathPattern k
   , _serializeJSString   :: v -> JS.JSString
-  , _deserializeJSString :: forall phase. JS.JSString -> Either (ErrorFor phase) v
+  , _deserializeJSString :: forall phase. JS.JSString -> Either Doc v
   , _valuesEqual         :: v -> v -> Bool
 
   , _storage   :: JS.Storage
@@ -67,7 +71,7 @@ newLocalStorageStore
   :: [Text]
   -> PathPattern k
   -> (v -> JS.JSString)
-  -> (forall phase. JS.JSString -> Either (ErrorFor phase) v)
+  -> (forall phase. JS.JSString -> Either Doc v)
   -> (v -> v -> Bool)
   -> LocalStorageStore k v
 newLocalStorageStore namespaces keyPattern serializeJSString deserializeJSString valuesEqual = LocalStorageStore
@@ -95,7 +99,7 @@ storeInLocalStorage
   => LocalStorageStore k v
   -> k
   -> v
-  -> IO (Either (ErrorFor phase) (LocalStorageStore k v, StoreResult v))
+  -> IO (Either Doc (LocalStorageStore k v, StoreResult v))
 storeInLocalStorage localStorage key value = do
   -- Check whether a value is already stored at this key.
   -- If it contains the same content, we don't need to do anything
@@ -114,7 +118,7 @@ storeInLocalStorage localStorage key value = do
               Just jsString
                 -> case _deserializeJSString localStorage jsString of
                      Left err
-                       -> pure . Left . EContext (EMsg . mconcat $
+                       -> pure . Left . mconcat $
                             [ text "When attempting to store a key-value in the LocalStorage store we encountered an existing value which did not deserialize as expected. This could indicate:"
                             , lineBreak
                             , text "- Serialization does not round trip correctly"
@@ -126,8 +130,9 @@ storeInLocalStorage localStorage key value = do
                             , lineBreak
                             , text "The file in question is at: "
                             , text . Text.pack . JS.unpack $ path
-                            ])
-                            $ err
+                            , lineBreak
+                            , indent1 $ err
+                            ]
 
                      Right existingValue
                        | _valuesEqual localStorage existingValue value
@@ -143,7 +148,7 @@ lookupFromLocalStorage
      )
   => LocalStorageStore k v
   -> k
-  -> IO (Either (ErrorFor phase) (LocalStorageStore k v, Maybe v))
+  -> IO (Either Doc (LocalStorageStore k v, Maybe v))
 lookupFromLocalStorage localStorage key = do
   case generateLocalStorageKey key localStorage of
     Left err
@@ -158,7 +163,10 @@ lookupFromLocalStorage localStorage key = do
               Just jsString
                 -> case _deserializeJSString localStorage jsString of
                      Left err
-                       -> pure . Left . EContext (EMsg . text $ "Could not deserialize value to expected type in localstorage") $ err
+                       -> pure . Left . mconcat $ [ text "Could not deserialize value to expected type in localstorage"
+                                                  , lineBreak
+                                                  , indent1 err
+                                                  ]
 
                      Right value
                        -> pure . Right $ (localStorage, Just value)
@@ -168,7 +176,7 @@ generateLocalStorageKey
   :: Show k
   => k
   -> LocalStorageStore k v
-  -> Either (ErrorFor phase) JS.JSString
+  -> Either Doc JS.JSString
 generateLocalStorageKey key f = case generatePath key (_keyPattern f) of
   Left err
     -> Left err
@@ -187,7 +195,7 @@ serializeJSString = JS.pack . Text.unpack . decodeUtf8 . serialize
 -- TODO: Don't.
 
 -- | Take a trip through every string type to Deserialize from a JSString.
-deserializeJSString :: Serialize s => JS.JSString -> Either (ErrorFor phase) s
+deserializeJSString :: Serialize s => JS.JSString -> Either Doc s
 deserializeJSString = deserialize . encodeUtf8 . Text.pack . JS.unpack
 -- TODO: Don't.
 

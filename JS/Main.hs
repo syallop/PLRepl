@@ -7,74 +7,75 @@
 
 module Main where
 
--- | Our modules
+-- Our modules
 import PLReplJS.LocalStorage
 
--- | Miso framework import
+-- Repl modules
+import PLRepl.Repl
+import PLRepl.Repl.Lispy
+import PLRepl.Widgets.Event hiding (Event)
+import PLRepl.Widgets.Name
+import qualified PLRepl.Widgets.Event as PL
+import qualified PLRepl.Widgets.State as PL
+
+-- Miso framework import
 import Miso
 import Miso.String
 
+-- JS
 import GHCJS.Prim
 import GHCJS.Types
 import GHCJS.Marshal
 
 -- PL dependencies
-import PL.Error
-import PL.Pattern
-import PL.Expr hiding (Expr, App)
 import PL.Commented
+import PL.Error
+import PL.Expr hiding (Expr, App)
+import PL.FixPhase
 import PL.Kind
+import PL.Pattern
+import PL.Serialize
+import PL.Store.Code
 import PL.TyVar
 import PL.Type hiding (Type)
+import PL.TypeCheck
 import PL.TypeCtx
 import PL.Var
-import PL.TypeCheck
-import PL.FixPhase
-import PL.CodeStore
-import PL.Store
-import PL.Store.Nested
-import PL.Store.File
-import PL.Store.Memory
-import PL.Hash
-import PL.HashStore
-import PL.Serialize
-
-import Reversible
-import Reversible.Iso
-
-import PLGrammar
-import PLLispy
-import PLLispy.Level
-import PLPrinter (lineBreak,indent,pprint,document)
-import PLPrinter.Doc (parens)
-import PLRepl.Repl
-import PLRepl.Repl.Lispy
-import PLRepl.Widgets.Event hiding (Event)
-import PLRepl.Widgets.Name
-
 import qualified PL as PL
 import qualified PL.Expr as PL
 import qualified PL.Name as PL
 import qualified PL.Test.Expr as Test
 import qualified PL.Test.ExprTestCase as Test
 import qualified PL.Type as PL
-import qualified PLEditor as E
-import qualified PLLispy.Test.Sources.Expr as Test
-import qualified PLPrinter
-import qualified PLRepl.Widgets.Event as PL
-import qualified PLRepl.Widgets.State as PL
 
-import qualified PLParser as PLParser
-import qualified PLPrinter as PLPrinter
+-- Other PL
+import PLGrammar
+import PLHash
+import PLLispy
+import PLLispy.Level
+import PLPrinter (lineBreak,indent,pprint,document)
+import PLPrinter.Doc (parens)
+import PLStore
+import PLStore.File
+import PLStore.Hash
+import PLStore.Memory
+import PLStore.Nested
+import Reversible
+import Reversible.Iso
+import qualified PLEditor as E
 import qualified PLGrammar as G
 import qualified PLLispy as L
 import qualified PLLispy.Level as L
+import qualified PLLispy.Test.Sources.Expr as Test
+import qualified PLParser as PLParser
+import qualified PLPrinter
+import qualified PLPrinter as PLPrinter
 
 -- Other dependencies
+import Control.Monad.IO.Class
 import Data.Map (Map)
 import Data.Maybe
 import Data.Text (Text)
-import Control.Monad.IO.Class
 import Data.Text.Encoding
 import System.Random
 import qualified Data.Map as Map
