@@ -40,23 +40,11 @@ let
   };
 
   # Compose DSLs and their interpreters.
-  DSL-ComposeSrc = pkgs.fetchFromGitHub {
-    owner  = "syallop";
-    repo   = "DSL-Compose";
-    rev    = "5a95ae855f3291aa3193a7424892035226b10d2f";
-    sha256 = "0315xn9g9f6sv69wwa9vdw3lfyv2gzw3bv8qwlv4qb6f76wyhrhr";
-  };
-  DSL-Compose = pkgs.haskell.packages.ghcjs.callCabal2nix "DSL-Compose" DSL-ComposeSrc {
+  DSL-Compose = pkgs.haskell.packages.ghcjs.callCabal2nix "DSL-Compose" (srcFilter ../../DSL-Compose) {
   };
 
   # Functions which can be ran forwards as well as backwards.
-  ReversibleSrc = pkgs.fetchFromGitHub {
-    owner = "syallop";
-    repo  = "reversible";
-    rev   = "5185a10559f0567ba927ea67a0b90f446d87dbe3";
-    sha256 = "1f3ppz7d2gi34hnwgisvimfixcci2ldiwkxxisd54r6bg9dhi2fz";
-  };
-  Reversible = pkgs.haskell.packages.ghcjs.callCabal2nix "Reversible" ReversibleSrc {
+  Reversible = pkgs.haskell.packages.ghcjs.callCabal2nix "Reversible" (srcFilter ../../Reversible) {
     inherit DSL-Compose;
   };
 
